@@ -1,5 +1,9 @@
 # Lean4TinyLLM
 
+> **▶ 線上試玩：[juice91.github.io/Lean4TinyLLM](https://juice91.github.io/Lean4TinyLLM/)**
+>
+> 不用安裝，打開就能一步一步看計算，並在瀏覽器裡用 Lean 檢查（第一次載入約 31 MB）。
+
 一個最小的自迴歸 Transformer：156 個權重，在瀏覽器裡一步一步算給你看，最後直接在同一個分頁裡跑 Lean 4 檢查。
 
 - 1 層 attention、1 個 ReLU MLP、輸入輸出共用嵌入表、greedy 選字
