@@ -74,3 +74,10 @@ node tools/train.js 1 > weights.json
 | `tools/lean-node.cjs` | 在 Node 裡跑 WebAssembly 的 Lean |
 | `tools/train.js` | 訓練權重 |
 | `runtime.json` | 固定的 Lean WebAssembly 版本和雜湊值 |
+| `LICENSE`、`LICENSE-TEXT`、`THIRD_PARTY_LICENSES` | 授權 |
+
+## 授權
+
+- **程式碼**：[MIT](LICENSE)，© 2026 juice91
+- **文字**（README、網頁上的解說、算式說明、名詞註解）：[CC BY 4.0](LICENSE-TEXT)。轉載或改編時請標註「Lean4TinyLLM by juice91」並附上這個 repo 的連結
+- **第三方元件**維持原本的授權，見 [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES)：Lean 4 的 WebAssembly 版本和改寫自 cauli/lean4-wasm-in-browser 的兩個檔案是 Apache-2.0，coi-serviceworker 是 MIT

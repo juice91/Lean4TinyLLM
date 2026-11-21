@@ -95,6 +95,8 @@ for (const f of fs.readdirSync(path.join(root, 'site'))) {
 }
 fs.copyFileSync(path.join(root, SOURCE), path.join(out, SOURCE));
 fs.writeFileSync(path.join(out, '.nojekyll'), '');
+// the site redistributes Lean (Apache-2.0), so the license texts travel with it
+for (const f of ['LICENSE', 'LICENSE-TEXT', 'THIRD_PARTY_LICENSES']) fs.copyFileSync(path.join(root, f), path.join(out, f + '.txt'));
 
 const build = {
   source: SOURCE,
