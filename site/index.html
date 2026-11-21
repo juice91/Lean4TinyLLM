@@ -728,7 +728,7 @@ $("copy").onclick = () => {
 
 // ---------- ⑨ run Lean (WebAssembly) in a worker ----------
 const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-const variant = new URLSearchParams(location.search).get("variant") || (IS_IOS ? "slim" : "full");
+let variant = new URLSearchParams(location.search).get("variant") || (IS_IOS ? "slim" : "full");
 let build = null, downloadTotal = 0, worker = null;
 const mb = n => (n / 1e6).toFixed(1) + " MB";
 function setStatus(kind, text){ const s = $("status"); s.className = "pill " + kind; s.textContent = text; }
@@ -793,6 +793,14 @@ $("checkBtn").onclick = () => {
     }
     else if (m.type === "done"){
       worker.terminate(); worker = null;
+      // Some engines cap a module at 100,000 exports; the full build has 104,769. Retry with the slim build.
+      if (variant !== "slim" && out.some(l => /exports count of \d+ exceeds/.test(l))){
+        variant = "slim"; readyText();
+        $("checkBtn").disabled = false; $("edit").disabled = false;
+        log("這個瀏覽器載入不了完整版的 Lean（匯出函數超過 100,000 個的上限），改用精簡版重跑…");
+        setTimeout(() => $("checkBtn").click(), 0);
+        return;
+      }
       $("bar").style.width = "100%";
       setTimeout(() => { $("progress").hidden = true; }, 600);
       $("checkBtn").disabled = false; $("edit").disabled = false;
