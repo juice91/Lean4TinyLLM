@@ -45,6 +45,7 @@ h1{font-size:23px;color:var(--navy);margin:4px 0;text-wrap:balance}
 .note{color:var(--muted);font-size:13.5px;margin:8px 0 0}
 .note b{color:var(--text)}
 .formula{font-family:var(--mono);background:var(--blue-soft);color:var(--navy);padding:8px 12px;border-radius:6px;display:block;font-size:14px;overflow-x:auto;white-space:pre}
+.pick .toggle input{accent-color:var(--blue)}
 .controls{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center}
 .toggle{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;font-size:14px}
 .toggle input{width:18px;height:18px;accent-color:var(--blue)}
@@ -194,7 +195,12 @@ footer a{color:var(--blue)}
     <div class="chips" id="ctx"></div>
     <div class="lbl">加一個字</div>
     <div class="chips" id="vocab"></div>
-    <div class="controls" style="margin-top:12px">
+    <div class="controls pick" role="radiogroup" aria-label="選字方式" style="margin-top:12px">
+      <span class="lbl" style="margin:0">選字方式</span>
+      <label class="toggle"><input type="radio" name="pick" id="pickGreedy" value="greedy" checked> greedy（每次選機率最高的）</label>
+      <label class="toggle"><input type="radio" name="pick" id="pickSample" value="sample"> 抽樣（照第 ⑧ 步的 T、Top-K、Top-P 抽）</label>
+    </div>
+    <div class="controls" style="margin-top:10px">
       <button class="btn primary" id="step">預測下一個字</button>
       <button class="btn" id="runAll">一直預測到「.」</button>
       <button class="btn" id="back">刪掉最後一個</button>
@@ -279,10 +285,10 @@ footer a{color:var(--blue)}
 
   <div class="card stepcard" id="c8" data-step="7">
     <div class="step"><span class="num">8</span>下一個字怎麼選：logits → Temperature → Top-K → Top-P → 抽樣</div>
-    <p class="note" style="margin-top:0">用第 7 步同一組 logits，改成抽樣。</p>
+    <p class="note" style="margin-top:0">用第 7 步同一組 logits，改成抽樣。最上面的「選字方式」切到「抽樣」時，「預測下一個字」和「一直預測到「.」」也會用這裡的設定。</p>
     <div class="sliders">
       <label for="temp"><span>Temperature <b id="tVal"></b></span><input type="range" id="temp" min="0.05" max="3" step="0.05" value="1"></label>
-      <label for="topk"><span>Top-K <b id="kVal"></b></span><input type="range" id="topk" min="1" max="7" step="1" value="7"></label>
+      <label for="topk"><span>Top-K <b id="kVal"></b></span><input type="range" id="topk" min="1" max="8" step="1" value="8"></label>
       <label for="topp"><span>Top-P <b id="pVal"></b></span><input type="range" id="topp" min="0.05" max="1" step="0.05" value="1"></label>
     </div>
     <div class="controls" style="margin:6px 0 4px"><button class="btn" id="resetSamp">重設（T=1、全開）</button></div>
@@ -468,9 +474,25 @@ function render(){
 
   // controls
   $("ctx").innerHTML = toks.map((t, i) => `<span class="chip${i === L ? " last" : ""}">${name(t)}</span>`).join("")
-    + `<span class="chip next" title="greedy 預測">${name(R.next)} ?</span>`;
+    + (pickMode === "greedy"
+      ? `<span class="chip next" title="greedy：機率最高的字">${name(R.next)} ?</span>`
+      : `<span class="chip next" title="抽樣：按「抽下一個字」才知道">抽 ?</span>`);
   $("vocab").innerHTML = W.VOCAB.map((w, t) => `<button class="vbtn" data-t="${t}">${esc(w)}</button>`).join("");
-  $("answer").innerHTML = `下一個字：<b>${name(R.next)}</b>，機率 ${f(R.p[R.next] * 100, 1)}%`;
+  $("step").textContent = pickMode === "greedy" ? "預測下一個字（選最高）" : "抽下一個字";
+  $("runAll").textContent = pickMode === "greedy" ? "一直預測到「.」" : "一直抽到「.」";
+  {
+    const order = R.p.map((_, t) => t).sort((a, b) => R.p[b] - R.p[a]), [a1, a2] = order;
+    const drew = lastDraw ? `剛剛抽到 <b>${name(lastDraw.t)}</b>（抽中的機率 ${f(lastDraw.p * 100, 1)}%）。` : "";
+    if (pickMode === "greedy"){
+      const close = R.p[a1] - R.p[a2] < 0.05 ? `第二名 ${name(a2)}（${f(R.p[a2] * 100, 1)}%）只差一點，切換成「抽樣」才可能選到它。` : "";
+      $("answer").innerHTML = `下一個字（選機率最高的）：<b>${name(R.next)}</b>，機率 ${f(R.p[R.next] * 100, 1)}%。${close}`;
+    } else {
+      const rows = samplingDist(R.lg), { T, K, P } = sampSettings();
+      const live = rows.filter(r => r.final >= 0.001).sort((x, y) => y.final - x.final);
+      const top = live.slice(0, 3).map(r => `${name(r.t)} ${f(r.final * 100, 1)}%`).join("、");
+      $("answer").innerHTML = `${drew}下一個字用抽的（T=${T.toFixed(2)}、Top-K ${K}、Top-P ${P.toFixed(2)}）：${top}${live.length > 3 ? "……" : ""}`;
+    }
+  }
   $("back").disabled = toks.length <= 1;
 
   // ① embed
@@ -546,11 +568,23 @@ function render(){
   agreement();
   if (typeof numberFootnotes === "function") numberFootnotes();
 }
-$("vocab").addEventListener("click", e => { const b = e.target.closest("button"); if (b && toks.length < 16){ toks.push(+b.dataset.t); render(); } });
-$("step").onclick = () => { if (toks.length < 16){ toks.push(forward(toks).next); render(); } };
-$("runAll").onclick = () => { const dotId = W.VOCAB.indexOf("."); for (let i = 0; i < 16 && toks.length < 16; i++){ const n = forward(toks).next; toks.push(n); if (n === dotId) break; } render(); };
-$("back").onclick = () => { if (toks.length > 1){ toks.pop(); render(); } };
-$("reset").onclick = () => { toks = [0, 1]; render(); };
+$("vocab").addEventListener("click", e => { const b = e.target.closest("button"); if (b && toks.length < 16){ toks.push(+b.dataset.t); lastDraw = null; render(); } });
+let pickMode = "greedy", lastDraw = null;   // lastDraw: what the last sampled step picked, and its probability
+function pickNext(tk){
+  const R = forward(tk);
+  if (pickMode === "greedy") return { t: R.next, p: R.p[R.next] };
+  const rows = samplingDist(R.lg), t = drawFrom(rows);
+  return { t, p: rows[t].final };
+}
+$("step").onclick = () => { if (toks.length < 16){ const d = pickNext(toks); toks.push(d.t); lastDraw = pickMode === "sample" ? d : null; render(); } };
+$("runAll").onclick = () => {
+  const dotId = W.VOCAB.indexOf("."); lastDraw = null;
+  for (let i = 0; i < 16 && toks.length < 16; i++){ const d = pickNext(toks); toks.push(d.t); if (d.t === dotId) break; }
+  render();
+};
+$("back").onclick = () => { if (toks.length > 1){ toks.pop(); lastDraw = null; render(); } };
+$("reset").onclick = () => { toks = [0, 1]; lastDraw = null; render(); };
+document.querySelectorAll('input[name="pick"]').forEach(r => r.addEventListener("change", e => { pickMode = e.target.value; lastDraw = null; render(); }));
 $("optScale").onchange = e => { opts.scale = e.target.checked; render(); };
 $("optMask").onchange = e => { opts.mask = e.target.checked; render(); };
 $("dims").onchange = () => render();
@@ -597,13 +631,13 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => rend
 
 // ---------- ⑧ sampling ----------
 let sampCounts = {}, sampKey = "", sampRows = null, lastPick = null;
-function renderSampling(R){
-  const key = toks.join(",") + "|" + R.lg.join(",");
-  if (key !== sampKey){ sampKey = key; sampCounts = {}; lastPick = null; $("picked").textContent = ""; }
-  $("topk").max = W.VOCAB.length;
-  const T = +$("temp").value, K = Math.min(+$("topk").value, W.VOCAB.length), P = +$("topp").value;
-  $("tVal").textContent = T.toFixed(2); $("kVal").textContent = K; $("pVal").textContent = P.toFixed(2);
-  const rows = R.lg.map((l, t) => ({ t, logit: l }));
+function sampSettings(){
+  return { T: +$("temp").value, K: Math.min(+$("topk").value, W.VOCAB.length), P: +$("topp").value };
+}
+// logits → ÷T → softmax → keep top K → keep up to cumulative P → renormalise
+function samplingDist(lg){
+  const { T, K, P } = sampSettings();
+  const rows = lg.map((l, t) => ({ t, logit: l }));
   const mx = Math.max(...rows.map(r => r.logit / T));
   const ex = rows.map(r => Math.exp(r.logit / T - mx)), S = sum(ex);
   rows.forEach((r, i) => r.p = ex[i] / S);
@@ -614,7 +648,22 @@ function renderSampling(R){
   kept.forEach(r => { const before = cum; cum += r.p / ks; if (before >= P - 1e-9) r.status = "p"; });
   const surv = rows.filter(r => r.status === "ok"), ss = sum(surv.map(r => r.p));
   rows.forEach(r => r.final = r.status === "ok" ? r.p / ss : 0);
+  return rows;
+}
+function drawFrom(rows){
+  let u = Math.random(), acc = 0;
+  for (const r of rows){ acc += r.final; if (u <= acc && r.final > 0) return r.t; }
+  return rows.filter(r => r.final > 0).pop().t;
+}
+function renderSampling(R){
+  const key = toks.join(",") + "|" + R.lg.join(",");
+  if (key !== sampKey){ sampKey = key; sampCounts = {}; lastPick = null; $("picked").textContent = ""; }
+  $("topk").max = W.VOCAB.length;
+  const { T, K, P } = sampSettings();
+  $("tVal").textContent = T.toFixed(2); $("kVal").textContent = K; $("pVal").textContent = P.toFixed(2);
+  const rows = samplingDist(R.lg);
   sampRows = rows;
+  const order = [...rows].sort((a, b) => b.p - a.p);
   $("vocabTable").innerHTML = `<tr><th>字</th><th>logit</th><th>÷T 後 softmax</th><th>排名</th><th>篩選</th><th>最後機率</th></tr>` + order.map(r => {
     const tag = r.status === "ok" ? `<span class="tag ok">保留</span>` : r.status === "k" ? `<span class="tag k">被 Top-K 砍</span>` : `<span class="tag p">被 Top-P 砍</span>`;
     return `<tr class="${r.status === "ok" ? "" : "cut"}"><td class="w">${name(r.t)}</td><td>${f(r.logit)}</td>
@@ -624,11 +673,7 @@ function renderSampling(R){
   }).join("");
   renderHist();
 }
-function drawOne(){
-  let u = Math.random(), acc = 0;
-  for (const r of sampRows){ acc += r.final; if (u <= acc && r.final > 0) return r.t; }
-  return sampRows.filter(r => r.final > 0).pop().t;
-}
+function drawOne(){ return drawFrom(sampRows); }
 function renderHist(){
   const tot = sum(Object.values(sampCounts));
   $("sAppend").disabled = lastPick === null || toks.length >= 16;
@@ -641,8 +686,8 @@ $("s1").onclick = () => { const t = drawOne(); sampCounts[t] = (sampCounts[t] ||
 $("s100").onclick = () => { for (let i = 0; i < 100; i++){ const t = drawOne(); sampCounts[t] = (sampCounts[t] || 0) + 1; } renderHist(); };
 $("sClear").onclick = () => { sampCounts = {}; lastPick = null; $("picked").textContent = ""; renderHist(); };
 $("sAppend").onclick = () => { if (lastPick !== null && toks.length < 16){ toks.push(lastPick); render(); } };
-["temp", "topk", "topp"].forEach(id => $(id).addEventListener("input", () => renderSampling(forward(toks))));
-$("resetSamp").onclick = () => { $("temp").value = 1; $("topk").value = W.VOCAB.length; $("topp").value = 1; renderSampling(forward(toks)); };
+["temp", "topk", "topp"].forEach(id => $(id).addEventListener("input", () => render()));
+$("resetSamp").onclick = () => { $("temp").value = 1; $("topk").value = W.VOCAB.length; $("topp").value = 1; render(); };
 
 // ---------- agreement with Lean's #eval ----------
 let LEAN_LOGITS = null;   // first #eval line of the build's Lean check (build.json)
@@ -964,6 +1009,7 @@ document.addEventListener("keydown", e => {
   if (e.key === "ArrowLeft") goStep(cur - 1);
 });
 
+$("topk").max = $("topk").value = W.VOCAB.length;   // default Top-K keeps every word
 renderCode();
 render();
 goStep(0, false);
