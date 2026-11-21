@@ -18,7 +18,7 @@
 
 `TinyLLM.lean` 只用 Lean 核心，不需要 Mathlib：
 
-- 三個 `#eval`：「<s> the」之後的 logits、機率，以及完整解碼出的句子
+- 三個 `#eval`：`<s> the`之後的 logits、機率，以及完整解碼出的句子
 - `decodes_sentence`：用 `native_decide` 檢查模型會解碼出整句
 - `no_peeking`：對任何輸入都成立的證明，後面加字不會改變前面位置的結果（causal mask）
 - `softmax_length`：softmax 輸出的長度等於輸入
