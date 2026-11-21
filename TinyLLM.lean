@@ -4,67 +4,68 @@ import Init.Data.OfScientific
 # TinyLLM: a whole autoregressive Transformer forward pass in core Lean 4
 
 One causal self-attention layer, one ReLU MLP, tied embeddings, greedy decoding.
-d = 4, MLP width 8, vocabulary of 7 tokens, 156 weights rounded to one decimal.
-The weights were fit to a single sentence, "the cat sat on the mat ."
+d = 4, MLP width 8, vocabulary of 8 tokens, 160 weights rounded to one decimal.
+The weights were fit to a single sentence, "the cat passed out on the piano ."
 No Mathlib needed: paste into https://live.lean-lang.org and it runs.
 -/
 
 abbrev Vec := List Float
 abbrev Mat := List (List Float)
 
-def vocab : List String := ["<s>", "the", "cat", "sat", "on", "mat", "."]
+def vocab : List String := ["<s>", "the", "cat", "passed", "out", "on", "piano", "."]
 
-/-- token embeddings (7 × 4); also reused as the output layer ("tied") -/
+/-- token embeddings (8 × 4); also reused as the output layer ("tied") -/
 def E : Mat := [
-  [-0.6, -1.1, 0.3, 0.4],
-  [-1.9, -0.8, -1.0, 0.8],
-  [-0.1, 0.6, -0.8, -0.3],
-  [0.9, -0.4, 0.4, -1.0],
-  [-0.4, -1.5, -0.1, -0.6],
-  [-0.7, 1.2, -0.3, 1.3],
-  [0.9, 1.0, 0.5, 0.1]]
+  [-0.3, -0.3, -0.3, 0.6],
+  [-1.3, 0.8, -0.7, 0.6],
+  [-0.5, 1.6, 0.3, -1.1],
+  [0.5, -1.2, 0.4, -1.3],
+  [0.8, -1.7, 0.2, 0.5],
+  [-0.2, -0.6, -0.1, 1.3],
+  [0.9, 0.3, -0.6, -1.2],
+  [0.9, 0.8, 0.3, 0.2]]
 
 def WQ : Mat := [
-  [-0.2, 0.4, -0.3, -0.2],
-  [-0.1, 0.1, -0.1, -0.1],
-  [0.0, 0.1, -0.1, 0.0],
-  [0.2, -0.3, 0.2, 0.2]]
+  [0.9, 0.2, 0.2, -0.4],
+  [-0.8, 0.1, 0.1, 0.3],
+  [-0.1, -0.1, -0.1, 0.1],
+  [0.0, -0.7, -0.6, 0.2]]
 
 def WK : Mat := [
-  [0.2, -0.3, 0.3, 0.2],
-  [0.2, -0.3, 0.2, 0.2],
-  [0.0, 0.0, 0.0, 0.0],
-  [-0.2, 0.3, -0.2, -0.2]]
+  [0.2, 0.3, 0.2, -0.2],
+  [-1.1, -0.3, -0.3, 0.5],
+  [-0.1, 0.3, 0.2, -0.1],
+  [0.5, -0.6, -0.5, 0.0]]
 
 def WV : Mat := [
-  [1.1, 0.1, 0.4, -0.5],
-  [0.5, 0.3, 0.5, 0.1],
-  [0.4, -0.1, 0.0, -0.3],
-  [-0.5, 0.0, -0.1, 0.4]]
+  [0.1, 0.5, 0.8, -0.3],
+  [-0.5, -0.2, -1.1, 1.0],
+  [-0.1, 0.4, 0.3, 0.2],
+  [0.5, -1.1, -0.2, -1.0]]
 
 def WO : Mat := [
-  [0.2, 0.1, 1.0, 0.9],
-  [0.2, 0.3, 0.1, 0.1],
-  [0.2, 0.3, 0.4, 0.3],
-  [0.1, 0.3, -0.5, -0.4]]
+  [-0.2, 0.4, 0.1, 0.6],
+  [1.2, -0.4, 0.4, -0.2],
+  [0.9, 0.2, 0.7, 0.8],
+  [0.4, -0.7, -0.3, -1.2]]
 
 /-- MLP up-projection (4 × 8) -/
 def W1 : Mat := [
-  [0.0, -0.1, 0.2, -0.2, 0.0, -0.9, -0.9, -0.3],
-  [0.0, -0.1, -0.2, -0.3, 0.0, 1.1, -1.3, -0.4],
-  [0.0, 0.0, -0.8, 0.0, -0.1, -1.3, -0.1, 0.0],
-  [0.0, 0.0, -1.2, 0.0, -0.1, 0.4, 0.1, 0.0]]
+  [0.1, 0.0, 0.4, -0.4, -0.4, 0.9, -0.8, -0.6],
+  [-0.2, 0.0, -0.6, -0.1, -0.1, 0.2, 0.1, 0.1],
+  [0.0, 0.0, 0.1, 0.2, -0.5, 0.3, -0.5, -0.3],
+  [-0.3, 0.0, -0.9, 0.9, -0.6, 0.3, 0.1, 0.1]]
 
 /-- MLP down-projection (8 × 4) -/
 def W2 : Mat := [
+  [0.1, -0.3, 0.0, 0.0],
   [0.0, 0.0, 0.0, 0.0],
-  [-0.1, 0.1, 0.0, 0.1],
-  [-0.3, -1.1, -0.4, -0.8],
-  [-0.2, 0.2, -0.1, 0.2],
-  [0.0, -0.1, 0.0, -0.1],
-  [1.4, 1.1, 0.6, -0.3],
-  [-0.8, 0.8, -0.7, 0.8],
-  [-0.2, 0.2, -0.2, 0.2]]
+  [0.3, -1.1, -0.1, 0.2],
+  [-0.7, -0.1, -0.3, 0.7],
+  [0.6, 0.1, -0.2, -0.6],
+  [0.5, 0.5, 0.2, 0.6],
+  [0.0, 0.8, -0.3, -0.3],
+  [0.0, 0.6, -0.3, -0.2]]
 
 /-! ## Linear algebra on lists -/
 
@@ -114,12 +115,12 @@ def logits (toks : List Nat) : List Float :=
 def argmax (xs : List Float) : Nat :=
   (List.range xs.length).foldl (fun best j => if xs.getD j 0 > xs.getD best 0 then j else best) 0
 
-/-- greedy decoding, stopping at "." -/
+/-- greedy decoding, stopping at "." (token 7) -/
 def generate : Nat → List Nat → List Nat
   | 0, toks => toks
   | n + 1, toks =>
     let next := argmax (logits toks)
-    if next == 6 then toks ++ [next] else generate n (toks ++ [next])
+    if next == 7 then toks ++ [next] else generate n (toks ++ [next])
 
 def detok (toks : List Nat) : String := " ".intercalate (toks.map (vocab.getD · "?"))
 
@@ -127,12 +128,12 @@ def detok (toks : List Nat) : String := " ".intercalate (toks.map (vocab.getD ·
 
 #eval logits [0, 1]                      -- scores after "<s> the"
 #eval softmax (logits [0, 1])            -- probabilities after "<s> the"
-#eval detok (generate 8 [0, 1])           -- "<s> the cat sat on the mat ."
+#eval detok (generate 9 [0, 1])           -- "<s> the cat passed out on the piano ."
 
 /-! ## Check it -/
 
 /-- Compiled-code check of the whole decode. -/
-theorem decodes_sentence : generate 8 [0, 1] = [0, 1, 2, 3, 4, 1, 5, 6] := by native_decide
+theorem decodes_sentence : generate 9 [0, 1] = [0, 1, 2, 3, 4, 5, 1, 6, 7] := by native_decide
 
 /-- Causality, proved for every input: appending future tokens never changes
     the hidden state at an earlier position. -/

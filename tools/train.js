@@ -1,9 +1,9 @@
-// Usage: node tools/train.js [seed] > weights.json   (seed 1 produced the weights in TinyLLM.lean)
+// Usage: node tools/train.js [seed] > weights.json   (seed 2 produced the weights in TinyLLM.lean)
 // Train a tiny 1-layer transformer (d=4, hidden=8, vocab=7, no positional embeddings,
 // tied embeddings) on one sentence, with finite-difference gradients + Adam,
 // then round weights to 1 decimal and check greedy generation still works.
-const VOCAB = ["<s>", "the", "cat", "sat", "on", "mat", "."];
-const SEQ = [0, 1, 2, 3, 4, 1, 5, 6];
+const VOCAB = ["<s>", "the", "cat", "passed", "out", "on", "piano", "."];
+const SEQ = [0, 1, 2, 3, 4, 5, 1, 6, 7];   // <s> the cat passed out on the piano .
 const D = 4, H = 8, V = VOCAB.length;
 
 const shapes = { E: [V, D], WQ: [D, D], WK: [D, D], WV: [D, D], WO: [D, D], W1: [D, H], W2: [H, D] };
@@ -56,13 +56,13 @@ function margin(P) {
   return Math.min(...L.map((lg, i) => { const t = SEQ[i + 1]; const others = lg.filter((_, j) => j !== t); return lg[t] - Math.max(...others); }));
 }
 
-function generate(P, prompt, maxLen = 8) {
+function generate(P, prompt, maxLen = SEQ.length + 2) {
   const toks = [...prompt];
   while (toks.length < maxLen) {
     const lg = forward(P, toks).at(-1);
     const nxt = lg.indexOf(Math.max(...lg));
     toks.push(nxt);
-    if (nxt === 6) break;
+    if (nxt === VOCAB.indexOf(".")) break;
   }
   return toks;
 }

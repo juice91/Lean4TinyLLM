@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>TinyLLM 最小範例</title>
-<meta name="description" content="一個 156 個權重的自迴歸 Transformer，每一步都能改數字、即時重算，最後在瀏覽器裡用 Lean 4 檢查。">
+<meta name="description" content="一個 160 個權重的自迴歸 Transformer，每一步都能改數字、即時重算，最後在瀏覽器裡用 Lean 4 檢查。">
 <!-- WebAssembly 的執行緒需要 cross-origin isolation；GitHub Pages 不能加標頭，所以用這個 service worker 補上（第一次會重新整理一次）。 -->
 <script>window.coi = { coepCredentialless: () => false, quiet: true };</script>
 <script src="coi-serviceworker.js"></script>
@@ -185,8 +185,8 @@ footer a{color:var(--blue)}
 <body>
 <div class="wrap">
   <h1>TinyLLM 最小範例（可操作，Lean 4<sup class="fn"><a href="#g-lean" data-g="lean"></a></sup> 驗證）</h1>
-  <p class="sub">一個最小的自迴歸 Transformer<sup class="fn"><a href="#g-autoreg" data-g="autoreg"></a></sup>（一個字一個字往下預測），從查表到選出下一個字，每一步都有：1 層 attention<sup class="fn"><a href="#g-attn" data-g="attn"></a></sup>、1 個 ReLU<sup class="fn"><a href="#g-relu" data-g="relu"></a></sup> MLP<sup class="fn"><a href="#g-mlp" data-g="mlp"></a></sup>、輸入輸出共用嵌入表<sup class="fn"><a href="#g-tied" data-g="tied"></a></sup>、greedy<sup class="fn"><a href="#g-greedy" data-g="greedy"></a></sup> 選字。比真正的模型少了 LayerNorm、位置編碼、多個 head 和多層，也沒有偏差項（bias）。156 個權重<sup class="fn"><a href="#g-weights" data-g="weights"></a></sup>是用一句話「the cat sat on the mat .」訓練出來，再四捨五入到小數一位。改下面的數字或切換開關，每一步都會即時重算；最後一張卡在瀏覽器裡直接跑 Lean，檢查同一個模型。</p>
-  <ul class="specs"><li>維度 d<sup class="fn"><a href="#g-dim" data-g="dim"></a></sup> <b>4</b></li><li>MLP 寬度 <b>8</b></li><li>詞表 <b>7</b></li><li>層數 <b>1</b></li><li>head<sup class="fn"><a href="#g-head" data-g="head"></a></sup> <b>1</b></li><li>位置編碼<sup class="fn"><a href="#g-posenc" data-g="posenc"></a></sup> <b>無</b></li><li>權重 <b>156</b></li></ul>
+  <p class="sub">一個最小的自迴歸 Transformer<sup class="fn"><a href="#g-autoreg" data-g="autoreg"></a></sup>（一個字一個字往下預測），從查表到選出下一個字，每一步都有：1 層 attention<sup class="fn"><a href="#g-attn" data-g="attn"></a></sup>、1 個 ReLU<sup class="fn"><a href="#g-relu" data-g="relu"></a></sup> MLP<sup class="fn"><a href="#g-mlp" data-g="mlp"></a></sup>、輸入輸出共用嵌入表<sup class="fn"><a href="#g-tied" data-g="tied"></a></sup>、greedy<sup class="fn"><a href="#g-greedy" data-g="greedy"></a></sup> 選字。比真正的模型少了 LayerNorm、位置編碼、多個 head 和多層，也沒有偏差項（bias）。160 個權重<sup class="fn"><a href="#g-weights" data-g="weights"></a></sup>是用一句話「the cat passed out on the piano .」訓練出來，再四捨五入到小數一位。改下面的數字或切換開關，每一步都會即時重算；最後一張卡在瀏覽器裡直接跑 Lean，檢查同一個模型。</p>
+  <ul class="specs"><li>維度 d<sup class="fn"><a href="#g-dim" data-g="dim"></a></sup> <b>4</b></li><li>MLP 寬度 <b>8</b></li><li>詞表 <b>8</b></li><li>層數 <b>1</b></li><li>head<sup class="fn"><a href="#g-head" data-g="head"></a></sup> <b>1</b></li><li>位置編碼<sup class="fn"><a href="#g-posenc" data-g="posenc"></a></sup> <b>無</b></li><li>權重 <b>160</b></li></ul>
 
   <div class="card">
     <div class="formula" id="formula">next = argmax<sup class="fn"><a href="#g-argmax" data-g="argmax"></a></sup> softmax<sup class="fn"><a href="#g-softmax" data-g="softmax"></a></sup>( MLP( x + Attention(x) ) · Eᵀ )</div>
@@ -645,13 +645,14 @@ $("sAppend").onclick = () => { if (lastPick !== null && toks.length < 16){ toks.
 $("resetSamp").onclick = () => { $("temp").value = 1; $("topk").value = W.VOCAB.length; $("topp").value = 1; renderSampling(forward(toks)); };
 
 // ---------- agreement with Lean's #eval ----------
-const LEAN_LOGITS = [-6.111631, 1.267623, 7.352207, -0.469793, -1.815472, 1.242818, -0.467181];
+let LEAN_LOGITS = null;   // first #eval line of the build's Lean check (build.json)
 function agreement(){
   if (SRC !== ORIGINAL){ $("agree").innerHTML = `<span class="pill wait">已修改</span>權重和原本不同；按第 9 步的「用 Lean 檢查」讓 Lean 算一次`; return; }
   if (!opts.scale){ $("agree").innerHTML = `<span class="pill wait">實驗中</span>關掉 √d 後，和 Lean 檔案（有 √d）算的不一樣`; return; }
+  if (!LEAN_LOGITS){ $("agree").innerHTML = `<span class="pill wait">比對中</span>等待建置時 Lean 算出的 logits`; return; }
   const save = opts.mask; opts.mask = true;
   const js = forward([0, 1]).lg; opts.mask = save;
-  const ok = js.every((x, i) => x.toFixed(6) === LEAN_LOGITS[i].toFixed(6));
+  const ok = js.length === LEAN_LOGITS.length && js.every((x, i) => x.toFixed(6) === LEAN_LOGITS[i].toFixed(6));
   $("agree").innerHTML = ok
     ? `<span class="pill">和 Lean 一致</span>JavaScript 算出「&lt;s&gt; the」的 logits，和 Lean 的 <code>#eval</code> 到小數 6 位都一樣`
     : `<span class="pill bad">不一致</span>JavaScript 和 Lean 的 <code>#eval</code> 結果不同`;
@@ -828,6 +829,8 @@ fetch("build.json").then(r => r.ok ? r.json() : null).then(b => {
   $("closureNote").textContent = `${b.closure.modules} / ${b.closure.ofModules} 個模組`;
   const when = new Date(b.builtAt).toISOString().slice(0, 10);
   $("ci").textContent = `建置網站時（${when}）也用同一個 WebAssembly Lean（${b.leanVersion}）檢查過原本的檔案。`;
+  try { LEAN_LOGITS = JSON.parse(b.check.output.split("\n")[0]); } catch (e) { LEAN_LOGITS = null; }
+  agreement();
 }).catch(() => {}).finally(readyText);
 
 // ---------- Lean snippet in each step ----------
@@ -881,7 +884,7 @@ const GLOSS = {
   mlp: ["MLP", "多層感知器。這裡是「乘 W₁ → ReLU → 乘 W₂」，對每個位置各自加工，見第 ⑥ 步。"],
   tied: ["共用嵌入表（tied weights）", "輸入查表和輸出算分數用同一張表 E，省下一半的權重。見第 ① 步和第 ⑦ 步。"],
   greedy: ["greedy（貪婪選字）", "每次都選機率最高的字（argmax），不抽樣。第 ⑧ 步是抽樣的版本。"],
-  weights: ["權重", "模型裡由訓練決定的數字：E、W_Q、W_K、W_V、W_O、W₁、W₂，一共 156 個。"],
+  weights: ["權重", "模型裡由訓練決定的數字：E、W_Q、W_K、W_V、W_O、W₁、W₂，一共 160 個。"],
   dim: ["維度 d", "每個字用幾個數字表示。這裡 d = 4，所以每個向量有 4 個數字。"],
   head: ["head", "attention 的一組 W_Q、W_K、W_V。大型模型同時有很多組（multi-head），這裡只有 1 組。"],
   posenc: ["位置編碼", "告訴模型「這是第幾個字」的額外向量。這裡沒有，所以兩個 the 的向量一模一樣，只能靠前文分辨。"],

@@ -4,11 +4,11 @@
 >
 > 不用安裝，打開就能一步一步看計算，並在瀏覽器裡用 Lean 檢查（第一次載入約 31 MB）。
 
-一個最小的自迴歸 Transformer：156 個權重，在瀏覽器裡一步一步算給你看，最後直接在同一個分頁裡跑 Lean 4 檢查。
+一個最小的自迴歸 Transformer：160 個權重，在瀏覽器裡一步一步算給你看，最後直接在同一個分頁裡跑 Lean 4 檢查。
 
 - 1 層 attention、1 個 ReLU MLP、輸入輸出共用嵌入表、greedy 選字
-- d = 4、MLP 寬度 8、詞表 7 個字、沒有位置編碼
-- 權重用一句話「the cat sat on the mat .」訓練，四捨五入到小數一位
+- d = 4、MLP 寬度 8、詞表 8 個字、沒有位置編碼
+- 權重用一句話「the cat passed out on the piano .」訓練，四捨五入到小數一位
 
 ## 頁面
 
@@ -57,10 +57,10 @@ node tools/build.mjs rt dist
 ## 重新訓練
 
 ```bash
-node tools/train.js 1 > weights.json
+node tools/train.js 2 > weights.json
 ```
 
-用中央差分算梯度、Adam、3000 步。seed 1 就是 `TinyLLM.lean` 裡的權重。
+用中央差分算梯度、Adam、3000 步。seed 2 就是 `TinyLLM.lean` 裡的權重。
 
 ## 檔案
 
