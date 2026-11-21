@@ -1,0 +1,11 @@
+{
+  "about": "Pinned Lean WebAssembly runtime from cauli/lean4-wasm-in-browser (deploy/runtime-release.json).",
+  "leanCommit": "62b6a2291302d4bbeace37642a066b7510d0145c",
+  "leanVersion": "4.33.0-dev",
+  "assetVersion": "62b6a2291302d4bbeace37642a066b7510d0145c-editor1",
+  "fixture": {
+    "url": "https://github.com/cauli/lean4-wasm-in-browser/releases/download/runtime-62b6a22-editor1/lean-runtime-fixture.tar.gz",
+    "sha256": "a66af27e859464db9849df10ea3bd7aa3b5ee824fbcc7c330fb8cf5931cc5527",
+    "bytes": 139215860
+  }
+}

@@ -1,0 +1,962 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TinyLLM 最小範例</title>
+<meta name="description" content="一個 156 個權重的自迴歸 Transformer，每一步都能改數字、即時重算，最後在瀏覽器裡用 Lean 4 檢查。">
+<!-- WebAssembly 的執行緒需要 cross-origin isolation；GitHub Pages 不能加標頭，所以用這個 service worker 補上（第一次會重新整理一次）。 -->
+<script>window.coi = { coepCredentialless: () => false, quiet: true };</script>
+<script src="coi-serviceworker.js"></script>
+<style>
+/* 版面：和「Attention 最小範例」一樣，單欄、編號卡片 ①→⑨，每張卡都能改數字、即時重算。 */
+:root{
+  --bg:#f6f8fa; --card:#ffffff; --border:#d0d7de; --muted:#57606a; --text:#1f2328;
+  --blue:#0969da; --navy:#0a3069; --green:#1f883d; --red:#cf222e; --amber:#9a6700; --purple:#8250df;
+  --blue-soft:#ddf4ff; --green-soft:#dafbe1; --red-soft:#ffebe9; --amber-soft:#fff8c5; --hl:#fff8c5;
+  --t0:#0969da; --t1:#1f883d; --t2:#bf8700; --t3:#8250df; --t4:#cf222e; --t5:#1b7c83; --t6:#bc4c00; --t7:#6e7781;
+  --kw:#8250df; --cm:#6e7781; --num:#953800; --str:#0a3069;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC","PingFang TC","Microsoft JhengHei",Helvetica,Arial,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#0d1117; --card:#161b22; --border:#30363d; --muted:#8d96a0; --text:#e6edf3;
+  --blue:#4493f8; --navy:#9ecbff; --green:#3fb950; --red:#f85149; --amber:#d29922; --purple:#bc8cff;
+  --blue-soft:#121d2f; --green-soft:#12261e; --red-soft:#2d1215; --amber-soft:#272115; --hl:#3b2e00;
+  --t0:#4493f8; --t1:#3fb950; --t2:#d29922; --t3:#bc8cff; --t4:#f85149; --t5:#39c5cf; --t6:#ff9b50; --t7:#8d96a0;
+  --kw:#d2a8ff; --cm:#8d96a0; --num:#ffa657; --str:#a5d6ff;
+  color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.6;font-size:15px}
+[hidden]{display:none!important}
+.wrap{max-width:900px;margin:0 auto;padding-block:22px 60px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1{font-size:23px;color:var(--navy);margin:4px 0;text-wrap:balance}
+.sub{color:var(--muted);margin:0 0 6px;font-size:14px}
+.specs{display:flex;flex-wrap:wrap;gap:4px 16px;margin:0 0 16px;padding:0;list-style:none;font-family:var(--mono);font-size:12.5px;color:var(--muted)}
+.specs b{color:var(--text)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:14px;min-width:0}
+.step{display:flex;align-items:center;gap:8px;margin:0 0 10px;font-weight:600;color:var(--navy);font-size:16px;flex-wrap:wrap}
+.num{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--blue);color:#fff;font-size:13px;flex:none}
+.leanchip{margin-left:auto;font-family:var(--mono);font-size:12px;font-weight:500;padding:2px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--kw);cursor:pointer}
+.leanchip:hover{border-color:var(--kw)}
+.note{color:var(--muted);font-size:13.5px;margin:8px 0 0}
+.note b{color:var(--text)}
+.formula{font-family:var(--mono);background:var(--blue-soft);color:var(--navy);padding:8px 12px;border-radius:6px;display:block;font-size:14px;overflow-x:auto;white-space:pre}
+.controls{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center}
+.toggle{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;font-size:14px}
+.toggle input{width:18px;height:18px;accent-color:var(--blue)}
+button{font:inherit;cursor:pointer}
+button:disabled{cursor:default;opacity:.5}
+.btn{border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:6px;padding:6px 12px;font-size:13.5px;text-decoration:none;display:inline-block}
+.btn:hover:not(:disabled){border-color:var(--blue);color:var(--blue)}
+.btn.primary{background:var(--green);border-color:var(--green);color:#fff}
+.btn.primary:hover:not(:disabled){filter:brightness(1.08);color:#fff}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+select{font:inherit;font-size:14px;border:1px solid var(--border);border-radius:6px;padding:4px 8px;background:var(--card);color:var(--text)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.chip{font-family:var(--mono);font-size:14px;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg)}
+.chip.last{border-color:var(--blue);background:var(--blue-soft)}
+.chip.next{border-style:dashed;border-color:var(--green);color:var(--green);background:var(--green-soft)}
+.vbtn{font-family:var(--mono);font-size:13px;padding:4px 9px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text)}
+.vbtn:hover{border-color:var(--blue);color:var(--blue)}
+.lbl{font-size:12px;color:var(--muted);font-weight:600;margin:10px 0 4px}
+.answer{font-size:15px}
+.answer b{color:var(--green);font-family:var(--mono)}
+.pill{font-size:12px;font-weight:600;padding:2px 9px;border-radius:999px;background:var(--green-soft);color:var(--green);white-space:nowrap}
+.pill.bad{background:var(--red-soft);color:var(--red)}
+.pill.wait{background:var(--blue-soft);color:var(--blue)}
+.agree{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-top:8px}
+.scroll{overflow-x:auto}
+
+/* matrices, as in the artifact */
+.mats{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start}
+.mat{font-family:var(--mono);font-size:13px}
+.mat .mlbl{font-family:var(--sans);font-size:12.5px;color:var(--muted);margin-bottom:4px;font-weight:600}
+.grid{display:inline-grid;gap:3px;padding:4px 8px;border-left:2px solid var(--navy);border-right:2px solid var(--navy);border-radius:4px}
+.cell{min-width:54px;padding:4px 6px;text-align:right;border-radius:4px;background:var(--bg);font-variant-numeric:tabular-nums}
+.cell.masked{background:var(--red-soft);color:var(--red);text-align:center}
+.cell.zero{color:var(--muted)}
+.cell .ix{display:block;font-size:10.5px;line-height:1.1;color:var(--muted);text-align:left;font-family:var(--sans)}
+.cell.masked .ix{color:var(--red);opacity:.7}
+.cell.hlrow{background:var(--hl)}
+.cell.hlrow.masked{background:var(--red-soft)}
+.corner{display:flex;flex-direction:column;justify-content:flex-end;font-size:10.5px;line-height:1.3;color:var(--muted);font-family:var(--sans);white-space:nowrap;padding-right:4px}
+.hdr{font-size:11px;color:var(--muted);text-align:center;font-family:var(--sans);white-space:nowrap}
+.rhdr{font-size:11px;color:var(--muted);font-family:var(--sans);display:flex;align-items:center;white-space:nowrap}
+
+/* weight editors */
+
+/* the arithmetic */
+.calc{font-family:var(--mono);font-size:12.5px;line-height:1.75;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin:8px 0 0;overflow-x:auto;white-space:pre;font-variant-numeric:tabular-nums}
+.calc b{color:var(--green)}
+.calc .dim{color:var(--muted)}
+details.more{margin-top:8px}
+details.more summary{cursor:pointer;font-size:13px;color:var(--muted)}
+
+/* attention bars */
+.weights .row{display:grid;grid-template-columns:100px minmax(0,1fr);gap:10px;align-items:center;margin:6px 0}
+.weights .who{font-weight:600;color:var(--navy);font-size:13.5px;font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar{display:flex;height:28px;border-radius:6px;overflow:hidden;border:1px solid var(--border);background:var(--bg)}
+.seg{display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;white-space:nowrap;overflow:hidden;font-family:var(--mono)}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin-top:6px}
+.dot{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:middle}
+canvas{width:100%;max-width:100%;height:auto;display:block;background:var(--card);border:1px solid var(--border);border-radius:8px}
+
+/* tables */
+table.t{border-collapse:collapse;font-size:13.5px;min-width:480px;width:100%}
+table.t th{color:var(--muted);font-weight:600;font-size:12px;text-align:left;padding:6px;border-bottom:1px solid var(--border);white-space:nowrap}
+table.t td{padding:6px;border-bottom:1px solid var(--border);font-family:var(--mono);white-space:nowrap}
+table.t td.w{font-weight:600;color:var(--navy)}
+table.t tr.top td{background:var(--green-soft)}
+table.t tr.cut td{color:var(--muted);text-decoration:line-through}
+table.t tr.cut td.st{text-decoration:none}
+.pbar{height:12px;border-radius:3px;background:var(--green)}
+.pbar.gray{background:var(--border)}
+.bc{display:flex;align-items:center;gap:6px}
+.tag{font-family:var(--sans);font-size:11.5px;padding:1px 6px;border-radius:10px;white-space:nowrap}
+.tag.ok{background:var(--green-soft);color:var(--green)}.tag.k{background:var(--red-soft);color:var(--red)}.tag.p{background:var(--amber-soft);color:var(--amber)}
+.sliders{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px 18px;margin:10px 0}
+.sliders label{display:flex;flex-direction:column;gap:4px;font-size:14px}
+.sliders span{display:flex;justify-content:space-between}
+.sliders b{color:var(--blue);font-family:var(--mono)}
+.sliders input{width:100%;accent-color:var(--blue)}
+.hrow{display:grid;grid-template-columns:52px minmax(0,1fr) 40px;gap:8px;align-items:center;margin:3px 0;font-size:13px;font-family:var(--mono)}
+.hrow .hb{height:12px;background:var(--blue);border-radius:3px}
+#picked b{color:var(--green);font-family:var(--mono)}
+
+/* Lean card */
+.leanbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px}
+.leanbar .fname{font-family:var(--mono);font-size:13px;font-weight:600;margin-right:auto}
+.code{max-height:440px;overflow:auto;border:1px solid var(--border);border-radius:8px;background:var(--bg);padding:8px 0;font-family:var(--mono);font-size:12.5px;line-height:1.6}
+.ln{display:grid;grid-template-columns:42px max-content;white-space:pre;padding-right:16px}
+.ln i{font-style:normal;color:var(--cm);text-align:right;padding-right:12px;user-select:none;opacity:.7}
+.ln.hl{background:var(--hl)}
+.ln.err{background:var(--red-soft)}
+.ln.err i{color:var(--red);opacity:1;font-weight:600}
+.c-kw{color:var(--kw);font-weight:600}.c-cm{color:var(--cm);font-style:italic}.c-num{color:var(--num)}.c-str{color:var(--str)}.c-tac{color:var(--blue)}.c-cmd{color:var(--red);font-weight:600}
+textarea.editor{width:100%;min-height:440px;resize:vertical;border:1px solid var(--border);border-radius:8px;padding:8px 12px;background:var(--bg);color:var(--text);font-family:var(--mono);font-size:12.5px;line-height:1.6;white-space:pre;overflow:auto;tab-size:2}
+.check{display:grid;gap:8px;margin-top:10px;font-size:13.5px}
+.check-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.check-h .what{color:var(--muted);margin-right:auto}
+.progress{height:6px;border-radius:3px;background:var(--border);overflow:hidden}
+.progress div{height:100%;width:0;background:var(--blue)}
+.console{margin:0;max-height:220px;overflow:auto;font-family:var(--mono);font-size:12px;line-height:1.5;white-space:pre;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 10px}
+.console .e{color:var(--red)}
+.theorems{display:flex;flex-wrap:wrap;gap:6px}
+.theorems span{font-family:var(--mono);font-size:12px;padding:2px 8px;border-radius:6px;background:var(--green-soft);color:var(--green)}
+.theorems.bad span{background:var(--red-soft);color:var(--red)}
+.small{font-size:12.5px;color:var(--muted)}
+.points{margin:0;padding-left:20px;display:grid;gap:4px}
+code{font-family:var(--mono);font-size:.9em;background:var(--blue-soft);padding:1px 5px;border-radius:4px}
+.stepnav{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;
+  padding-bottom:max(12px,env(safe-area-inset-bottom,0px));box-shadow:0 -4px 14px rgba(0,0,0,.08)}
+.pills{display:flex;flex-wrap:wrap;gap:4px;flex:1;justify-content:center}
+.pills button{font-family:var(--mono);font-size:12.5px;min-width:30px;padding:3px 7px;border-radius:999px;border:1px solid var(--border);background:var(--bg);color:var(--muted)}
+.pills button.done{background:var(--blue-soft);color:var(--blue);border-color:transparent}
+.pills button[aria-current="step"]{background:var(--blue);color:#fff;border-color:var(--blue)}
+.stepcard{scroll-margin-top:12px}
+.leansnip{margin-top:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);overflow:hidden}
+.leansnip .sh{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 10px;border-bottom:1px solid var(--border);font-size:12.5px;color:var(--muted)}
+.leansnip .sh b{color:var(--kw);font-family:var(--mono);font-weight:600}
+.leansnip .sh button{margin-left:auto;font-size:12px;padding:2px 8px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--blue)}
+.leansnip .sc{overflow-x:auto;padding:6px 0;font-family:var(--mono);font-size:12.5px;line-height:1.6}
+.leansnip .gap{color:var(--muted);padding-left:54px;font-family:var(--mono);font-size:12px}
+.leansnip .ln.hl{background:var(--hl);box-shadow:inset 3px 0 0 var(--amber)}
+.leansnip .why{padding:6px 10px;border-top:1px solid var(--border);font-size:12.5px;color:var(--muted)}
+sup.fn{font-size:.68em;line-height:0;margin-left:1px;vertical-align:super}
+sup.fn a{color:var(--blue);text-decoration:none;font-family:var(--sans);font-weight:600;padding:0 1px}
+sup.fn a:hover{text-decoration:underline}
+.formula sup.fn a,.step sup.fn a{font-weight:600}
+.gloss{margin:0;padding-left:28px;display:grid;gap:6px;font-size:14px}
+.gloss li{padding:4px 8px;border-radius:6px;scroll-margin-top:16px}
+.gloss li::marker{color:var(--blue);font-weight:600;font-family:var(--mono)}
+.gloss li b{color:var(--navy)}
+.gloss li.flash{background:var(--hl)}
+.gloss .back{font-size:12px;margin-left:6px;color:var(--blue);text-decoration:none;white-space:nowrap}
+footer{margin-top:20px;font-size:12.5px;color:var(--muted)}
+footer a{color:var(--blue)}
+@media (max-width:560px){.cell{min-width:46px}.weights .row{grid-template-columns:72px minmax(0,1fr)}}
+@media (prefers-reduced-motion:no-preference){.seg,.pbar,.progress div{transition:width .25s ease}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>TinyLLM 最小範例（可操作，Lean 4<sup class="fn"><a href="#g-lean" data-g="lean"></a></sup> 驗證）</h1>
+  <p class="sub">一個最小的自迴歸 Transformer<sup class="fn"><a href="#g-autoreg" data-g="autoreg"></a></sup>（一個字一個字往下預測），從查表到選出下一個字，每一步都有：1 層 attention<sup class="fn"><a href="#g-attn" data-g="attn"></a></sup>、1 個 ReLU<sup class="fn"><a href="#g-relu" data-g="relu"></a></sup> MLP<sup class="fn"><a href="#g-mlp" data-g="mlp"></a></sup>、輸入輸出共用嵌入表<sup class="fn"><a href="#g-tied" data-g="tied"></a></sup>、greedy<sup class="fn"><a href="#g-greedy" data-g="greedy"></a></sup> 選字。比真正的模型少了 LayerNorm、位置編碼、多個 head 和多層，也沒有偏差項（bias）。156 個權重<sup class="fn"><a href="#g-weights" data-g="weights"></a></sup>是用一句話「the cat sat on the mat .」訓練出來，再四捨五入到小數一位。改下面的數字或切換開關，每一步都會即時重算；最後一張卡在瀏覽器裡直接跑 Lean，檢查同一個模型。</p>
+  <ul class="specs"><li>維度 d<sup class="fn"><a href="#g-dim" data-g="dim"></a></sup> <b>4</b></li><li>MLP 寬度 <b>8</b></li><li>詞表 <b>7</b></li><li>層數 <b>1</b></li><li>head<sup class="fn"><a href="#g-head" data-g="head"></a></sup> <b>1</b></li><li>位置編碼<sup class="fn"><a href="#g-posenc" data-g="posenc"></a></sup> <b>無</b></li><li>權重 <b>156</b></li></ul>
+
+  <div class="card">
+    <div class="formula" id="formula">next = argmax<sup class="fn"><a href="#g-argmax" data-g="argmax"></a></sup> softmax<sup class="fn"><a href="#g-softmax" data-g="softmax"></a></sup>( MLP( x + Attention(x) ) · Eᵀ )</div>
+    <div class="lbl">上下文（最後一個字用來預測下一個字）</div>
+    <div class="chips" id="ctx"></div>
+    <div class="lbl">加一個字</div>
+    <div class="chips" id="vocab"></div>
+    <div class="controls" style="margin-top:12px">
+      <button class="btn primary" id="step">預測下一個字</button>
+      <button class="btn" id="runAll">一直預測到「.」</button>
+      <button class="btn" id="back">刪掉最後一個</button>
+      <button class="btn" id="reset">重設成「&lt;s&gt; the」</button>
+    </div>
+    <div class="controls" style="margin-top:10px">
+      <label class="toggle"><input type="checkbox" id="optScale" checked> 除以 √d<sup class="fn"><a href="#g-sqrtd" data-g="sqrtd"></a></sup></label>
+      <label class="toggle"><input type="checkbox" id="optMask" checked> Causal mask<sup class="fn"><a href="#g-mask" data-g="mask"></a></sup>（只能看前面）</label>
+      <button class="btn" id="restoreW">還原原本的 Lean 檔</button>
+    </div>
+    <div class="answer" id="answer" style="margin-top:10px"></div>
+    <div class="agree" id="agree"></div>
+  </div>
+
+  <div class="card stepcard" id="c1" data-step="0">
+    <div class="step"><span class="num">1</span>查表：每個字換成一個向量<sup class="fn"><a href="#g-vec" data-g="vec"></a></sup><button class="leanchip" data-def="embed">embed</button></div>
+    <div class="formula">xⱼ = E[第 j 個字]</div>
+    <div class="mats" id="c1mats" style="margin-top:10px"></div>
+    <p class="note">模型不認識文字，只認識數字。嵌入表 E 的每一列是一個字的 4 個數字，第一步就是查表。這個模型沒有位置編碼：兩個 “the” 拿到的向量完全一樣，它要靠 attention 從前文分辨自己是哪一個。</p>
+    <div class="leansnip" id="snip1"></div>
+  </div>
+
+  <div class="card stepcard" id="c2" data-step="1">
+    <div class="step"><span class="num">2</span>Query、Key、Value<sup class="fn"><a href="#g-qkv" data-g="qkv"></a></sup>：X 乘上三個矩陣<sup class="fn"><a href="#g-matrix" data-g="matrix"></a></sup><button class="leanchip" data-def="attend">attend</button></div>
+    <div class="formula">Q = X·W_Q<sup class="fn"><a href="#g-wqkv" data-g="wqkv"></a></sup>    K = X·W_K    V = X·W_V</div>
+    <div class="mats" id="c2mats" style="margin-top:10px"></div>
+    <p class="note">Q（查詢）：我在找什麼。K（鍵）：我有什麼可以被找。V（值）：被找到時要給出的內容。三個都是同一個 X 乘上不同的矩陣，矩陣是訓練學出來的。</p>
+    <div class="lbl">算式：最後一個字的 q 怎麼算</div><div class="calc" id="c2calc"></div>
+    <div class="leansnip" id="snip2"></div>
+  </div>
+
+  <div class="card stepcard" id="c3" data-step="2">
+    <div class="step"><span class="num">3</span>分數 Q · Kᵀ<sup class="fn"><a href="#g-transpose" data-g="transpose"></a></sup>，再套上 mask<button class="leanchip" data-def="attend">attend</button></div>
+    <div class="formula" id="c3formula"></div>
+    <div class="mats" id="c3mats" style="margin-top:10px"></div>
+    <p class="note" id="c3note"></p>
+    <div class="lbl">算式：最後一列的分數怎麼算</div><div class="calc" id="c3calc"></div>
+    <div class="leansnip" id="snip3"></div>
+  </div>
+
+  <div class="card stepcard" id="c4" data-step="3">
+    <div class="step"><span class="num">4</span>Softmax：每一列加起來 = 1<button class="leanchip" data-def="softmax">softmax</button></div>
+    <div class="formula">wᵢⱼ = e^(Sᵢⱼ − max) / Σₖ e^(Sᵢₖ − max)</div>
+    <div class="weights" id="c4bars" style="margin-top:10px"></div>
+    <div class="legend" id="c4legend"></div>
+    <p class="note" id="c4note">每一條代表一個位置「把注意力分給誰」。顏色是被注意的那個字。</p>
+    <div class="lbl">算式：最後一列的 softmax 怎麼算</div><div class="calc" id="c4calc"></div>
+    <div class="leansnip" id="snip4"></div>
+  </div>
+
+  <div class="card stepcard" id="c5" data-step="4">
+    <div class="step"><span class="num">5</span>用權重加權 V，再乘 W_O<sup class="fn"><a href="#g-wo" data-g="wo"></a></sup>、加回 x<button class="leanchip" data-def="attend">attend</button></div>
+    <div class="formula">mixᵢ = Σⱼ wᵢⱼ·Vⱼ    hᵢ = xᵢ + mixᵢ·W_O</div>
+    <div id="c5calc"></div>
+    <div class="controls" style="margin:10px 0 6px">
+      <label class="toggle">畫哪兩個維度
+        <select id="dims"><option value="0,1">d0 × d1</option><option value="0,2">d0 × d2</option><option value="0,3">d0 × d3</option><option value="1,2">d1 × d2</option><option value="1,3">d1 × d3</option><option value="2,3">d2 × d3</option></select></label>
+    </div>
+    <canvas id="cv" width="760" height="440"></canvas>
+    <div class="legend"><span><span class="dot" style="background:var(--green)"></span>V（原本的內容）</span><span><span class="dot" style="background:var(--card);border:2px solid var(--blue)"></span>mix（混合後）</span></div>
+    <p class="note">V 是 4 維，這裡選兩個維度畫出來。mix 一定落在 V 點圍成的範圍內，因為它就是 V 的加權平均（投影到任兩個維度也一樣）。最後的 W_O 和殘差<sup class="fn"><a href="#g-residual" data-g="residual"></a></sup>「加回 x」讓 attention 只需要學要修改多少，原本的資訊不會被蓋掉。</p>
+    <div class="leansnip" id="snip5"></div>
+  </div>
+
+  <div class="card stepcard" id="c6" data-step="5">
+    <div class="step"><span class="num">6</span>MLP：展開、ReLU、壓回去<button class="leanchip" data-def="block">block</button></div>
+    <div class="formula">u = ReLU(h·W₁<sup class="fn"><a href="#g-w12" data-g="w12"></a></sup>)    m = h + u·W₂</div>
+    <div id="c6vals"></div>
+    <p class="note" id="c6note"></p>
+    <div class="lbl">算式：每一個乘法</div><div class="calc" id="c6calc"></div>
+    <div class="leansnip" id="snip6"></div>
+  </div>
+
+  <div class="card stepcard" id="c7" data-step="6">
+    <div class="step"><span class="num">7</span>Logits<sup class="fn"><a href="#g-logits" data-g="logits"></a></sup> → 機率 → 選字<button class="leanchip" data-def="logits">logits</button></div>
+    <div class="formula">logitₜ = m·E[t]    p = softmax(logits)    next = argmax p</div>
+    <div class="scroll" style="margin-top:10px"><table class="t" id="c7table"></table></div>
+    <p class="note">輸出層共用嵌入表 E（tied weights）：m 的方向越像哪個字的嵌入向量，那個字的分數就越高。這裡用 greedy，永遠選最高的。</p>
+    <div class="lbl">算式：每個 logit 怎麼算</div><div class="calc" id="c7calc"></div>
+    <div class="leansnip" id="snip7"></div>
+  </div>
+
+  <div class="card stepcard" id="c8" data-step="7">
+    <div class="step"><span class="num">8</span>下一個字怎麼選：logits → Temperature → Top-K → Top-P → 抽樣</div>
+    <p class="note" style="margin-top:0">用第 7 步同一組 logits，改成抽樣。</p>
+    <div class="sliders">
+      <label for="temp"><span>Temperature <b id="tVal"></b></span><input type="range" id="temp" min="0.05" max="3" step="0.05" value="1"></label>
+      <label for="topk"><span>Top-K <b id="kVal"></b></span><input type="range" id="topk" min="1" max="7" step="1" value="7"></label>
+      <label for="topp"><span>Top-P <b id="pVal"></b></span><input type="range" id="topp" min="0.05" max="1" step="0.05" value="1"></label>
+    </div>
+    <div class="controls" style="margin:6px 0 4px"><button class="btn" id="resetSamp">重設（T=1、全開）</button></div>
+    <div class="scroll"><table class="t" id="vocabTable"></table></div>
+    <div class="controls" style="margin-top:12px">
+      <button class="btn primary" id="s1">抽 1 次</button>
+      <button class="btn" id="s100">抽 100 次</button>
+      <button class="btn" id="sClear">清除</button>
+      <button class="btn" id="sAppend" disabled>把抽到的字接到上下文</button>
+      <span id="picked"></span>
+    </div>
+    <div id="hist" style="margin-top:8px"></div>
+    <p class="note">順序：logits ÷ T → softmax → 只留機率最高的 K 個 → 再從最高往下累加到 P 為止 → 剩下的重新正規化 → 抽樣。<br>
+      • <b>Temperature</b>：T &lt; 1 讓高分的字更突出（更保守），T &gt; 1 讓分布更平（更有創意也更容易亂講），T → 0 幾乎等於每次都選最高分（greedy）。<br>
+      • <b>Top-K</b>：只留前 K 名，固定數量。<br>
+      • <b>Top-P</b>（nucleus）：留下累積機率剛好到 P 的最少字數，數量會隨分布改變。分布很集中時只留 1–2 個，很平時會留很多個。<br>
+      這個模型只學過一句話，機率非常集中，T 拉到 2 以上才常抽到別的字。</p>
+    <div class="leansnip" id="snip8"></div>
+  </div>
+
+  <div class="card stepcard" id="c9" data-step="8">
+    <div class="step"><span class="num">9</span>用 Lean 檢查：在你的瀏覽器裡跑</div>
+    <p class="note" style="margin-top:0">上面 1–7 步就是這個 Lean 檔案在做的事（點每張卡右上角的名字可以跳到對應的定義）。可以按「直接改原始碼」改任何地方（例如權重），按「完成」後上面 1–8 步會用新的檔案重算。按「用 Lean 檢查」會在這個分頁裡跑真正的 Lean 編譯器（WebAssembly<sup class="fn"><a href="#g-wasm" data-g="wasm"></a></sup>），執行三個 <code>#eval<sup class="fn"><a href="#g-eval" data-g="eval"></a></sup></code> 並檢查三個定理<sup class="fn"><a href="#g-theorem" data-g="theorem"></a></sup>，不經過任何伺服器。</p>
+    <div class="leanbar">
+      <span class="fname">TinyLLM.lean</span>
+      <button class="btn" id="edit">直接改原始碼</button>
+      <button class="btn" id="copy">複製</button>
+      <a class="btn" id="openWeb" href="https://live.lean-lang.org" target="_blank" rel="noopener">在 Lean 4 Web 開啟 ↗</a>
+    </div>
+    <div class="code" id="code"></div>
+    <textarea class="editor" id="editor" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="編輯 TinyLLM.lean" hidden></textarea>
+    <div class="check" aria-live="polite">
+      <div class="check-h">
+        <span class="pill wait" id="status">還沒跑</span>
+        <span class="what" id="what">在這個分頁執行 <code>lean TinyLLM.lean</code>。</span>
+        <button class="btn primary" id="checkBtn">用 Lean 檢查</button>
+      </div>
+      <div class="progress" id="progress" hidden><div id="bar"></div></div>
+      <div class="theorems" id="theorems" hidden></div>
+      <pre class="console" id="console" hidden></pre>
+      <div class="small" id="ci"></div>
+    </div>
+  </div>
+
+  <div class="card stepcard" id="c10" data-step="9">
+    <div class="step"><span class="num">i</span>重點</div>
+    <ul class="points note" style="color:var(--text)">
+      <li>沒開 mask 時每個 token 都能看所有人，這是 BERT<sup class="fn"><a href="#g-bert" data-g="bert"></a></sup> 那類 encoder 的做法（雙向）。開了 causal mask，token 只能看自己和前面的，這是自迴歸 Transformer 一個字一個字生成文字的方式。Token 0 只能看自己，所以它的 mix 就等於它自己的 V。</li>
+      <li>關掉 mask 時，最後一個字的預測不會變：它本來就看得到全部。改變的是前面的位置，它們開始偷看未來。Lean 的 <code>no_peeking</code><sup class="fn"><a href="#g-nopeek" data-g="nopeek"></a></sup> 定理證明的正是「後面加字不會改變前面的位置」。</li>
+      <li>√d 讓分數不會因為維度變大而太大，避免 softmax 變得太極端。模型是開著 √d 訓練的，關掉後預測可能改變。</li>
+      <li>Attention 決定「每個位置變成什麼向量」，Temperature／Top-K／Top-P 只在最後一步決定「下一個字怎麼選」，兩者互不影響。</li>
+      <li>檔案開頭是 <code>prelude</code> 加上只 import <code>Init.Data.OfScientific</code>，所以瀏覽器只需要載入 <span id="closureNote">一部分</span> Lean 核心函式庫，而不是全部。</li>
+    </ul>
+  </div>
+
+  <nav class="card stepnav" id="stepnav" aria-label="步驟">
+    <button class="btn" id="prevStep">← 上一步</button>
+    <div class="pills" id="stepPills"></div>
+    <button class="btn primary" id="nextStep">下一步 →</button>
+    <label class="toggle small"><input type="checkbox" id="showAll"> 全部顯示</label>
+  </nav>
+
+  <section class="card glossary" id="glossary" aria-label="名詞註解">
+    <div class="step"><span class="num">註</span>名詞註解</div>
+    <p class="note" style="margin-top:0">頁面上名詞第一次出現時，後面的小編號就對到這裡。滑鼠停在編號上也會直接顯示。</p>
+    <ol class="gloss" id="glossList"></ol>
+  </section>
+
+  <footer>
+    Lean 的 WebAssembly 版本來自 <a href="https://github.com/cauli/lean4-wasm-in-browser" target="_blank" rel="noopener">cauli/lean4-wasm-in-browser</a>（Apache-2.0）；cross-origin isolation 來自 <a href="https://github.com/gzuidhof/coi-serviceworker" target="_blank" rel="noopener">coi-serviceworker</a>（MIT）。
+  </footer>
+</div>
+
+<script type="text/plain" id="lean-src">__LEAN__</script>
+<script>
+(function(){
+const $ = id => document.getElementById(id);
+const ORIGINAL = $("lean-src").textContent.replace(/^\n/, "");
+let SRC = ORIGINAL;
+const MATS = ["E", "WQ", "WK", "WV", "WO", "W1", "W2"];
+
+// ---------- weights: read from, and written back to, the Lean source ----------
+function parseWeights(src){
+  const w = {};
+  for (const n of MATS){
+    const m = src.match(new RegExp("def " + n + " : Mat := (\\[[\\s\\S]*?\\]\\])"));
+    if (!m) throw new Error("找不到 " + n);
+    w[n] = JSON.parse(m[1]);
+  }
+  w.VOCAB = JSON.parse(src.match(/def vocab : List String := (\[[^\]]*\])/)[1]);
+  const D = w.E[0].length, H = w.W1[0].length;
+  const ok = D === 4 && w.E.length === w.VOCAB.length && w.E.every(r => r.length === D)
+    && ["WQ", "WK", "WV", "WO"].every(k => w[k].length === D && w[k].every(r => r.length === D))
+    && w.W1.length === D && w.W1.every(r => r.length === H) && w.W2.length === H && w.W2.every(r => r.length === D)
+    && MATS.every(k => w[k].every(r => r.every(x => typeof x === "number" && isFinite(x))));
+  if (!ok) throw new Error("矩陣形狀不對");
+  return w;
+}
+const ORIG_W = parseWeights(ORIGINAL);
+let W = JSON.parse(JSON.stringify(ORIG_W));
+
+// ---------- the model: same operations, same order as the Lean file ----------
+const dot = (a, b) => a.reduce((s, x, i) => s + x * b[i], 0);
+const addV = (a, b) => a.map((x, i) => x + b[i]);
+const scale = (c, v) => v.map(x => c * x);
+const zeros = n => Array(n).fill(0);
+const vecMat = (v, M) => v.reduce((acc, vi, i) => addV(acc, scale(vi, M[i])), zeros(M[0].length));
+const relu = v => v.map(x => x > 0 ? x : 0);
+const sum = xs => xs.reduce((a, b) => a + b, 0);
+const softmax = xs => { const m = xs.reduce((a, b) => Math.max(a, b), xs[0]); const es = xs.map(x => Math.exp(x - m)); const s = sum(es); return es.map(e => e / s); };
+const argmax = xs => xs.reduce((best, x, j) => x > xs[best] ? j : best, 0);
+let opts = { scale: true, mask: true };
+
+function forward(tk){
+  const n = tk.length;
+  const X = tk.map(t => W.E[t]);
+  const Q = X.map(x => vecMat(x, W.WQ)), K = X.map(x => vecMat(x, W.WK)), V = X.map(x => vecMat(x, W.WV));
+  const S = Q.map(q => K.map(k => dot(q, k)));
+  const div = opts.scale ? Math.sqrt(4) : 1;
+  const S2 = S.map(r => r.map(x => x / div));
+  const M = S.map((r, i) => r.map((_, j) => opts.mask && j > i));
+  const A = S2.map((r, i) => {
+    const seen = r.filter((_, j) => !M[i][j]);
+    const p = softmax(seen);
+    let k = 0;
+    return r.map((_, j) => M[i][j] ? 0 : p[k++]);
+  });
+  const MIX = A.map(w => w.reduce((acc, wj, j) => addV(acc, scale(wj, V[j])), zeros(4)));
+  const O = MIX.map(m => vecMat(m, W.WO));
+  const Hs = X.map((x, i) => addV(x, O[i]));
+  const h = Hs[n - 1];
+  const pre = vecMat(h, W.W1), u = relu(pre), down = vecMat(u, W.W2), m = addV(h, down);
+  const lg = W.E.map(e => dot(m, e));
+  const p = softmax(lg);
+  return { n, X, Q, K, V, S, S2, M, A, MIX, O, Hs, h, pre, u, down, m, lg, p, next: argmax(lg) };
+}
+
+// ---------- formatting ----------
+const f = (x, d = 2) => { if (!isFinite(x)) return x < 0 ? "−∞" : "∞"; const r = x.toFixed(d); return r === (-0).toFixed(d) ? (0).toFixed(d) : r; };
+const pn = x => x < 0 ? `(${f(x)})` : f(x);
+const vstr = (v, d = 2) => "[" + v.map(x => f(x, d)).join(", ") + "]";
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const sub = n => String(n).split("").map(d => "₀₁₂₃₄₅₆₇₈₉"[d]).join("");
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const tcol = j => `var(--t${j % 8})`;
+const tcolRaw = j => css(`--t${j % 8}`);
+let toks = [0, 1];
+const name = t => esc(W.VOCAB[t] ?? "?");
+const posName = (i) => `${i}·${name(toks[i])}`;
+
+function matHTML(label, M, o = {}){
+  const cols = M[0].length + (o.rowHdr ? 1 : 0);
+  let h = `<div class="mat"><div class="mlbl">${label}</div><div class="grid" style="grid-template-columns:repeat(${cols},auto)">`;
+  if (o.colHdr){ if (o.rowHdr) h += `<div class="corner">${o.corner || ""}</div>`; o.colHdr.forEach(c => h += `<div class="hdr">${c}</div>`); }
+  M.forEach((r, i) => {
+    if (o.rowHdr) h += `<div class="rhdr">${o.rowHdr[i]}</div>`;
+    r.forEach((x, j) => {
+      const masked = o.mask && o.mask[i][j];
+      const ix = o.idx ? `<span class="ix">${o.idx}${ij(i, j)}</span>` : "";
+      h += `<div class="cell${masked ? " masked" : ""}${!masked && o.dimZero && Math.abs(x) < 1e-12 ? " zero" : ""}${o.hlRow === i ? " hlrow" : ""}">${ix}${masked ? "−∞" : f(x, o.d ?? 2)}</div>`;
+    });
+  });
+  return h + "</div></div>";
+}
+// two subscripts, with a comma once a position reaches 10: S₁₀, S₁₂,₃
+const ij = (i, j) => sub(i) + (i > 9 || j > 9 ? "," : "") + sub(j);
+function vmLines(out, v, M, res){
+  return res.map((_, j) => `${out}[${j}] = ${v.map((vi, i) => `${pn(vi)}×${pn(M[i][j])}`).join(" + ")}\n${" ".repeat(out.length + 3 + String(j).length)}= <b>${f(res[j], 3)}</b>`).join("\n");
+}
+
+$("restoreW").onclick = () => {
+  W = JSON.parse(JSON.stringify(ORIG_W)); SRC = ORIGINAL;
+  if (!$("editor").hidden) $("editor").value = SRC;
+  errLines = new Set(); resetLeanStatus(); renderCode(); render();
+};
+
+// ---------- render all cards ----------
+function render(){
+  toks = toks.filter(t => t < W.VOCAB.length);
+  if (!toks.length) toks = [0];
+  const R = forward(toks), L = R.n - 1, names = toks.map(t => name(t));
+  const rowHdr = toks.map((_, i) => posName(i));
+
+  // controls
+  $("ctx").innerHTML = toks.map((t, i) => `<span class="chip${i === L ? " last" : ""}">${name(t)}</span>`).join("")
+    + `<span class="chip next" title="greedy 預測">${name(R.next)} ?</span>`;
+  $("vocab").innerHTML = W.VOCAB.map((w, t) => `<button class="vbtn" data-t="${t}">${esc(w)}</button>`).join("");
+  $("answer").innerHTML = `下一個字：<b>${name(R.next)}</b>，機率 ${f(R.p[R.next] * 100, 1)}%`;
+  $("back").disabled = toks.length <= 1;
+
+  // ① embed
+  $("c1mats").innerHTML = matHTML("X（上下文的向量，每列一個字）", R.X, { rowHdr, colHdr: ["d0", "d1", "d2", "d3"] });
+
+  // ② Q K V
+  $("c2mats").innerHTML = matHTML("Q", R.Q, { rowHdr }) + matHTML("K", R.K) + matHTML("V", R.V);
+  $("c2calc").innerHTML = `最後一個字「${names[L]}」：x = ${vstr(R.X[L])}\n` + vmLines("q", R.X[L], W.WQ, R.Q[L]);
+
+  // ③ scores
+  const qHdr = toks.map((_, i) => `q${sub(i)}·${names[i]}`), kHdr = toks.map((_, j) => `k${sub(j)}·${names[j]}`);
+  const corner = `<span>列 qᵢ 在看</span><span>欄 kⱼ 被看</span>`;
+  $("c3formula").textContent = opts.scale ? "Sᵢⱼ = qᵢ · kⱼ / √d        （d = 4，√d = 2）" : "Sᵢⱼ = qᵢ · kⱼ        （目前沒除以 √d）";
+  let box = matHTML("Q·Kᵀ（還沒除）", R.S, { rowHdr: qHdr, colHdr: kHdr, corner, idx: "", hlRow: L });
+  if (opts.scale) box += matHTML("÷ √4", R.S2, { rowHdr: qHdr, colHdr: kHdr, idx: "S", hlRow: L });
+  if (opts.mask) box += matHTML("套上 mask", R.S2, { rowHdr: qHdr, colHdr: kHdr, idx: "S", mask: R.M, hlRow: L });
+  $("c3mats").innerHTML = box;
+  $("c3note").innerHTML = "格子 Sᵢⱼ（第 i 列、第 j 欄）= 第 i 個字的 qᵢ 和第 j 個字的 kⱼ 做內積<sup class=\"fn\"><a href=\"#g-dot\" data-g=\"dot\"></a></sup>：越大代表越「對得上」。黃底的是最後一列，下面的算式就是在算這一列。"
+    + (opts.mask ? "紅色格子是未來的字，自迴歸模型不准偷看，設成 −∞，softmax 後就是 0（Lean 裡寫成 xs.take (i+1)）。" : "現在沒有 mask：每個位置都看得到後面的字。");
+  {
+    const qL = `q${sub(L)}`, div = opts.scale ? " / 2" : "";
+    let t = `${qL} = ${vstr(R.Q[L])}   <span class="dim">（${names[L]} 的 query，第 ② 步）</span>\n`
+      + R.K.map((k, j) => `k${sub(j)} = ${vstr(k)}   <span class="dim">（${names[j]} 的 key）</span>`).join("\n") + "\n";
+    R.K.forEach((k, j) => {
+      const S = `S${ij(L, j)}`, pad = " ".repeat(S.length + 1);
+      if (R.M[L][j]){ t += `\n${S} = −∞   <span class="dim">（k${sub(j)} 是未來的字，被 mask 擋掉）</span>\n`; return; }
+      t += `\n${S} = ${qL} · k${sub(j)}${opts.scale ? " / √4" : ""}   <span class="dim">（${L}·${names[L]} 看 ${j}·${names[j]}）</span>\n`
+        + `${pad}= (${R.Q[L].map((_, d) => `${qL}[${d}]×k${sub(j)}[${d}]`).join(" + ")})${div}\n`
+        + `${pad}= (${R.Q[L].map((qd, d) => `${pn(qd)}×${pn(k[d])}`).join(" + ")})${div}\n`
+        + (opts.scale ? `${pad}= ${f(R.S[L][j], 4)}${div}\n` : "")
+        + `${pad}= <b>${f(R.S2[L][j], 4)}</b>\n`;
+    });
+    $("c3calc").innerHTML = t.trimEnd();
+  }
+
+  // ④ softmax bars
+  $("c4bars").innerHTML = R.A.map((r, i) => `<div class="row"><div class="who" title="位置 ${i}">${posName(i)}</div><div class="bar">` +
+    r.map((w, j) => w > 0.0005 ? `<div class="seg" style="width:${w * 100}%;background:${tcol(j)}" title="w${ij(i, j)}：拿 ${j}·${names[j]} 的 v，${f(w, 3)}">${w > 0.12 ? f(w, 2) : ""}</div>` : "").join("") + `</div></div>`).join("");
+  $("c4legend").innerHTML = toks.map((_, j) => `<span><span class="dot" style="background:${tcol(j)}"></span>拿 ${j}·${names[j]} 的 v</span>`).join("");
+  {
+    const row = R.S2[L].filter((_, j) => !R.M[L][j]), mx = Math.max(...row), ex = row.map(x => Math.exp(x - mx)), S = sum(ex);
+    const neg = x => x < 0 ? `(${f(x, 4)})` : f(x, 4);
+    const Ss = row.map((_, j) => `S${ij(L, j)}`);
+    $("c4calc").innerHTML = `最後一列（${L}·${names[L]}）：max = max(${Ss.join(", ")}) = ${f(mx, 4)}\n\n`
+      + row.map((x, j) => `e^(${Ss[j]} − max) = e^(${f(x, 4)} − ${neg(mx)}) = ${f(ex[j], 4)}`).join("\n")
+      + `\n\n總和 Σ = ${ex.map(e => f(e, 4)).join(" + ")} = ${f(S, 4)}\n\n`
+      + ex.map((e, j) => `w${ij(L, j)} = e^(${Ss[j]} − max) / Σ = ${f(e, 4)} / ${f(S, 4)} = <b>${f(R.A[L][j], 4)}</b>   <span class="dim">（拿 ${j}·${names[j]} 的 v）</span>`).join("\n");
+  }
+
+  // ⑤ mix, W_O, residual
+  $("c5calc").innerHTML = R.MIX.map((mx, i) => {
+    const terms = R.A[i].map((w, j) => w > 0 ? `${f(w)} × ${vstr(R.V[j])}` : null).filter(Boolean);
+    const pad = " ".repeat(String(i).length + names[i].length + 9);
+    return `<div class="calc">${posName(i)}：mix = ${terms.join("\n" + pad + "+ ")}\n${pad}= <b>${vstr(mx)}</b>`
+      + (i === L ? `\n\n${" ".repeat(4)}mix·W_O = ${vstr(R.O[i])}\n${" ".repeat(4)}h = x + mix·W_O = ${vstr(R.X[i])} + ${vstr(R.O[i])}\n${" ".repeat(4)}  = <b>${vstr(R.Hs[i])}</b>   <span class="dim">← 只有最後一個位置接著往下算</span>` : "")
+      + `</div>`;
+  }).join("");
+  draw(R);
+
+  // ⑥ MLP
+  $("c6vals").innerHTML = `<div class="mats" style="margin-top:10px">${matHTML("h（最後一個字）", [R.h])}${matHTML("h·W₁", [R.pre])}${matHTML("u = ReLU", [R.u], { dimZero: true })}${matHTML("u·W₂", [R.down])}${matHTML("m = h + u·W₂", [R.m])}</div>`;
+  $("c6note").innerHTML = `把 4 個數字展開成 8 個，ReLU 把負的變成 0（這次有 <b>${R.u.filter(x => x === 0).length}</b> 個變成 0），再壓回 4 個，最後加回 h。ReLU 是整個模型唯一的非線性。`;
+  $("c6calc").innerHTML = vmLines("pre", R.h, W.W1, R.pre) + `\n\nu = ReLU(pre) = ${vstr(R.u)}\n\n` + vmLines("down", R.u, W.W2, R.down)
+    + `\n\nm = h + down = ${vstr(R.h)} + ${vstr(R.down)}\n  = <b>${vstr(R.m)}</b>`;
+
+  // ⑦ logits
+  const order = R.lg.map((_, t) => t).sort((a, b) => R.lg[b] - R.lg[a]);
+  $("c7table").innerHTML = `<tr><th>字</th><th>logit = m·E[t]</th><th>機率</th></tr>` + order.map(t =>
+    `<tr class="${t === R.next ? "top" : ""}"><td class="w">${name(t)}</td><td>${f(R.lg[t], 3)}</td><td><div class="bc"><div class="pbar" style="width:${Math.max(1, R.p[t] * 120)}px"></div>${f(R.p[t] * 100, 2)}%</div></td></tr>`).join("");
+  $("c7calc").innerHTML = R.lg.map((lg, t) => `logit(${name(t)}) = ${R.m.map((mi, i) => `${pn(mi)}×${pn(W.E[t][i])}`).join(" + ")}\n${" ".repeat(9 + W.VOCAB[t].length)}= <b>${f(lg, 4)}</b>`).join("\n");
+
+  renderSampling(R);
+  agreement();
+  if (typeof numberFootnotes === "function") numberFootnotes();
+}
+$("vocab").addEventListener("click", e => { const b = e.target.closest("button"); if (b && toks.length < 16){ toks.push(+b.dataset.t); render(); } });
+$("step").onclick = () => { if (toks.length < 16){ toks.push(forward(toks).next); render(); } };
+$("runAll").onclick = () => { const dotId = W.VOCAB.indexOf("."); for (let i = 0; i < 16 && toks.length < 16; i++){ const n = forward(toks).next; toks.push(n); if (n === dotId) break; } render(); };
+$("back").onclick = () => { if (toks.length > 1){ toks.pop(); render(); } };
+$("reset").onclick = () => { toks = [0, 1]; render(); };
+$("optScale").onchange = e => { opts.scale = e.target.checked; render(); };
+$("optMask").onchange = e => { opts.mask = e.target.checked; render(); };
+$("dims").onchange = () => render();
+
+// ---------- ⑤ the 2-D picture ----------
+function draw(R){
+  const [a, b] = $("dims").value.split(",").map(Number);
+  const V = R.V.map(v => [v[a], v[b]]), MX = R.MIX.map(v => [v[a], v[b]]);
+  const cv = $("cv"), ctx = cv.getContext("2d");
+  const Wd = cv.width, Ht = cv.height, pad = 46;
+  const pts = [...V, ...MX, [0, 0]], xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  const x0 = Math.floor(Math.min(...xs)) - 1, x1 = Math.ceil(Math.max(...xs)) + 1;
+  const y0 = Math.floor(Math.min(...ys)) - 1, y1 = Math.ceil(Math.max(...ys)) + 1;
+  const sx = x => pad + (x - x0) / (x1 - x0) * (Wd - 2 * pad), sy = y => Ht - pad - (y - y0) / (y1 - y0) * (Ht - 2 * pad);
+  ctx.clearRect(0, 0, Wd, Ht);
+  ctx.fillStyle = css("--card"); ctx.fillRect(0, 0, Wd, Ht);
+  ctx.font = "13px " + css("--sans");
+  ctx.strokeStyle = css("--border"); ctx.fillStyle = css("--muted"); ctx.lineWidth = 1;
+  const step = Math.max(1, Math.ceil((x1 - x0) / 10));
+  for (let x = x0; x <= x1; x += step){ ctx.beginPath(); ctx.moveTo(sx(x), sy(y0)); ctx.lineTo(sx(x), sy(y1)); ctx.stroke(); ctx.fillText(x, sx(x) - 4, Ht - pad + 18); }
+  for (let y = y0; y <= y1; y += step){ ctx.beginPath(); ctx.moveTo(sx(x0), sy(y)); ctx.lineTo(sx(x1), sy(y)); ctx.stroke(); ctx.fillText(y, pad - 24, sy(y) + 4); }
+  ctx.fillText(`d${a} →`, Wd - pad - 20, Ht - 10); ctx.fillText(`d${b} ↑`, 8, pad - 14);
+  ctx.strokeStyle = css("--muted"); ctx.lineWidth = 1.5;
+  if (x0 <= 0 && x1 >= 0){ ctx.beginPath(); ctx.moveTo(sx(0), sy(y0)); ctx.lineTo(sx(0), sy(y1)); ctx.stroke(); }
+  if (y0 <= 0 && y1 >= 0){ ctx.beginPath(); ctx.moveTo(sx(x0), sy(0)); ctx.lineTo(sx(x1), sy(0)); ctx.stroke(); }
+  MX.forEach((o, i) => R.A[i].forEach((w, j) => {
+    if (w < 0.005) return;
+    ctx.strokeStyle = tcolRaw(i); ctx.globalAlpha = 0.15 + 0.6 * w; ctx.lineWidth = 1 + 5 * w; ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(sx(o[0]), sy(o[1])); ctx.lineTo(sx(V[j][0]), sy(V[j][1])); ctx.stroke();
+  }));
+  ctx.setLineDash([]); ctx.globalAlpha = 1;
+  ctx.font = "600 13px " + css("--sans");
+  V.forEach((v, j) => {
+    ctx.fillStyle = css("--green"); ctx.beginPath(); ctx.arc(sx(v[0]), sy(v[1]), 7, 0, 7); ctx.fill();
+    ctx.fillStyle = css("--text"); ctx.fillText(`V${j} ${W.VOCAB[toks[j]]}`, sx(v[0]) + 10, sy(v[1]) - 8);
+  });
+  MX.forEach((o, i) => {
+    ctx.fillStyle = css("--card"); ctx.strokeStyle = tcolRaw(i); ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.rect(sx(o[0]) - 6, sy(o[1]) - 6, 12, 12); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = css("--navy"); ctx.fillText(`mix${i}`, sx(o[0]) + 10, sy(o[1]) + 18);
+  });
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => render());
+
+// ---------- ⑧ sampling ----------
+let sampCounts = {}, sampKey = "", sampRows = null, lastPick = null;
+function renderSampling(R){
+  const key = toks.join(",") + "|" + R.lg.join(",");
+  if (key !== sampKey){ sampKey = key; sampCounts = {}; lastPick = null; $("picked").textContent = ""; }
+  $("topk").max = W.VOCAB.length;
+  const T = +$("temp").value, K = Math.min(+$("topk").value, W.VOCAB.length), P = +$("topp").value;
+  $("tVal").textContent = T.toFixed(2); $("kVal").textContent = K; $("pVal").textContent = P.toFixed(2);
+  const rows = R.lg.map((l, t) => ({ t, logit: l }));
+  const mx = Math.max(...rows.map(r => r.logit / T));
+  const ex = rows.map(r => Math.exp(r.logit / T - mx)), S = sum(ex);
+  rows.forEach((r, i) => r.p = ex[i] / S);
+  const order = [...rows].sort((a, b) => b.p - a.p);
+  order.forEach((r, rank) => { r.rank = rank + 1; r.status = rank < K ? "ok" : "k"; });
+  const kept = order.filter(r => r.status === "ok"), ks = sum(kept.map(r => r.p));
+  let cum = 0;
+  kept.forEach(r => { const before = cum; cum += r.p / ks; if (before >= P - 1e-9) r.status = "p"; });
+  const surv = rows.filter(r => r.status === "ok"), ss = sum(surv.map(r => r.p));
+  rows.forEach(r => r.final = r.status === "ok" ? r.p / ss : 0);
+  sampRows = rows;
+  $("vocabTable").innerHTML = `<tr><th>字</th><th>logit</th><th>÷T 後 softmax</th><th>排名</th><th>篩選</th><th>最後機率</th></tr>` + order.map(r => {
+    const tag = r.status === "ok" ? `<span class="tag ok">保留</span>` : r.status === "k" ? `<span class="tag k">被 Top-K 砍</span>` : `<span class="tag p">被 Top-P 砍</span>`;
+    return `<tr class="${r.status === "ok" ? "" : "cut"}"><td class="w">${name(r.t)}</td><td>${f(r.logit)}</td>
+      <td><div class="bc"><div class="pbar gray" style="width:${Math.max(2, r.p * 90)}px"></div>${f(r.p, 3)}</div></td>
+      <td>#${r.rank}</td><td class="st">${tag}</td>
+      <td><div class="bc"><div class="pbar" style="width:${r.final ? Math.max(2, r.final * 90) : 0}px"></div>${r.final ? f(r.final, 3) : "0"}</div></td></tr>`;
+  }).join("");
+  renderHist();
+}
+function drawOne(){
+  let u = Math.random(), acc = 0;
+  for (const r of sampRows){ acc += r.final; if (u <= acc && r.final > 0) return r.t; }
+  return sampRows.filter(r => r.final > 0).pop().t;
+}
+function renderHist(){
+  const tot = sum(Object.values(sampCounts));
+  $("sAppend").disabled = lastPick === null || toks.length >= 16;
+  if (!tot){ $("hist").innerHTML = ""; return; }
+  const mx = Math.max(...Object.values(sampCounts));
+  $("hist").innerHTML = `<div class="note" style="margin:0 0 4px">累計抽了 ${tot} 次：</div>` +
+    W.VOCAB.map((w, t) => { const c = sampCounts[t] || 0; return `<div class="hrow"><span>${esc(w)}</span><div><div class="hb" style="width:${c / mx * 100}%"></div></div><span>${c}</span></div>`; }).join("");
+}
+$("s1").onclick = () => { const t = drawOne(); sampCounts[t] = (sampCounts[t] || 0) + 1; lastPick = t; $("picked").innerHTML = `抽到：<b>${name(t)}</b>`; renderHist(); };
+$("s100").onclick = () => { for (let i = 0; i < 100; i++){ const t = drawOne(); sampCounts[t] = (sampCounts[t] || 0) + 1; } renderHist(); };
+$("sClear").onclick = () => { sampCounts = {}; lastPick = null; $("picked").textContent = ""; renderHist(); };
+$("sAppend").onclick = () => { if (lastPick !== null && toks.length < 16){ toks.push(lastPick); render(); } };
+["temp", "topk", "topp"].forEach(id => $(id).addEventListener("input", () => renderSampling(forward(toks))));
+$("resetSamp").onclick = () => { $("temp").value = 1; $("topk").value = W.VOCAB.length; $("topp").value = 1; renderSampling(forward(toks)); };
+
+// ---------- agreement with Lean's #eval ----------
+const LEAN_LOGITS = [-6.111631, 1.267623, 7.352207, -0.469793, -1.815472, 1.242818, -0.467181];
+function agreement(){
+  if (SRC !== ORIGINAL){ $("agree").innerHTML = `<span class="pill wait">已修改</span>權重和原本不同；按第 9 步的「用 Lean 檢查」讓 Lean 算一次`; return; }
+  if (!opts.scale){ $("agree").innerHTML = `<span class="pill wait">實驗中</span>關掉 √d 後，和 Lean 檔案（有 √d）算的不一樣`; return; }
+  const save = opts.mask; opts.mask = true;
+  const js = forward([0, 1]).lg; opts.mask = save;
+  const ok = js.every((x, i) => x.toFixed(6) === LEAN_LOGITS[i].toFixed(6));
+  $("agree").innerHTML = ok
+    ? `<span class="pill">和 Lean 一致</span>JavaScript 算出「&lt;s&gt; the」的 logits，和 Lean 的 <code>#eval</code> 到小數 6 位都一樣`
+    : `<span class="pill bad">不一致</span>JavaScript 和 Lean 的 <code>#eval</code> 結果不同`;
+}
+
+// ---------- ⑨ Lean source view ----------
+const KW = new Set(["def","theorem","abbrev","let","fun","if","then","else","by","match","with","do","where","example","prelude","import"]);
+const TAC = new Set(["unfold","rw","simp","omega","native_decide","only"]);
+function hlLine(line, st){
+  let out = "", i = 0;
+  while (i < line.length){
+    if (st.block){
+      const end = line.indexOf("-/", i);
+      const seg = end < 0 ? line.slice(i) : line.slice(i, end + 2);
+      out += `<span class="c-cm">${esc(seg)}</span>`;
+      if (end < 0) return out; st.block = false; i = end + 2; continue;
+    }
+    const rest = line.slice(i); let m;
+    if (rest.startsWith("/-")){ st.block = true; continue; }
+    if (rest.startsWith("--")){ out += `<span class="c-cm">${esc(rest)}</span>`; break; }
+    if ((m = rest.match(/^"[^"]*"/))){ out += `<span class="c-str">${esc(m[0])}</span>`; i += m[0].length; continue; }
+    if ((m = rest.match(/^#eval/))){ out += `<span class="c-cmd">${m[0]}</span>`; i += 5; continue; }
+    if ((m = rest.match(/^\d+(\.\d+)?/))){ out += `<span class="c-num">${m[0]}</span>`; i += m[0].length; continue; }
+    if ((m = rest.match(/^[A-Za-z_][A-Za-z0-9_'.]*/))){
+      const w = m[0]; out += KW.has(w) ? `<span class="c-kw">${w}</span>` : TAC.has(w) ? `<span class="c-tac">${w}</span>` : esc(w);
+      i += w.length; continue;
+    }
+    out += esc(line[i]); i++;
+  }
+  return out;
+}
+let LINES = [], errLines = new Set();
+function renderCode(){
+  LINES = SRC.split("\n");
+  const st = { block: false };
+  $("code").innerHTML = LINES.map((l, n) => `<div class="ln${errLines.has(n + 1) ? " err" : ""}"><i>${n + 1}</i><span>${hlLine(l, st) || " "}</span></div>`).join("");
+  $("openWeb").href = "https://live.lean-lang.org/#code=" + encodeURIComponent(SRC);
+  if (typeof renderSnips === "function") renderSnips();
+}
+function highlightDef(nm){
+  const r = defLines(nm);
+  if (!r) return;
+  const s = r.s, e = r.e;
+  if (!$("editor").hidden) $("edit").click();
+  if (!$("showAll").checked) goStep(8, false);
+  const rows = $("code").children;
+  for (const el of rows) el.classList.remove("hl");
+  for (let k = s; k <= e; k++) rows[k].classList.add("hl");
+  $("c9").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+  const box = $("code");
+  box.scrollTop = rows[s].offsetTop - box.offsetTop - 12;
+}
+document.addEventListener("click", e => { const c = e.target.closest(".leanchip"); if (c) highlightDef(c.dataset.def); });
+
+$("edit").onclick = () => {
+  const ed = $("editor");
+  if (ed.hidden){ ed.value = SRC; ed.hidden = false; $("code").hidden = true; $("edit").textContent = "完成"; ed.focus(); }
+  else { setSource(ed.value); ed.hidden = true; $("code").hidden = false; $("edit").textContent = "直接改原始碼"; }
+};
+function setSource(text){
+  if (text === SRC) return;
+  SRC = text; errLines = new Set(); resetLeanStatus();
+  try { W = parseWeights(SRC); }
+  catch (e) { $("what").textContent = "讀不到檔案裡的權重（" + e.message + "），上面的卡片先保留原本的權重。"; }
+  renderCode(); render();
+}
+const currentSource = () => $("editor").hidden ? SRC : $("editor").value;
+$("copy").onclick = () => {
+  const text = currentSource();
+  const done = () => { $("copy").textContent = "已複製"; setTimeout(() => $("copy").textContent = "複製", 1600); };
+  const fallback = () => { const r = document.createRange(); r.selectNodeContents($("code")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); $("copy").textContent = "已選取，按 ⌘C"; };
+  try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+};
+
+// ---------- ⑨ run Lean (WebAssembly) in a worker ----------
+const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const variant = new URLSearchParams(location.search).get("variant") || (IS_IOS ? "slim" : "full");
+let build = null, downloadTotal = 0, worker = null;
+const mb = n => (n / 1e6).toFixed(1) + " MB";
+function setStatus(kind, text){ const s = $("status"); s.className = "pill " + kind; s.textContent = text; }
+function resetLeanStatus(){
+  if (worker) return;
+  setStatus("wait", "還沒跑"); $("theorems").hidden = true; $("console").hidden = true; readyText();
+}
+function log(text, isErr){
+  const c = $("console"); c.hidden = false;
+  const line = document.createElement("span");
+  if (isErr) line.className = "e";
+  line.textContent = text + "\n";
+  c.appendChild(line); c.scrollTop = c.scrollHeight;
+}
+function showTheorems(src, ok){
+  const names = [...src.matchAll(/^theorem\s+([^\s(:]+)/gm)].map(m => m[1]);
+  const box = $("theorems");
+  box.hidden = !names.length;
+  box.className = "theorems" + (ok ? "" : " bad");
+  box.innerHTML = names.map(n => `<span>${ok ? "✓" : "?"} ${esc(n)}</span>`).join("");
+}
+function readyText(){
+  if (!window.crossOriginIsolated){
+    $("checkBtn").disabled = true;
+    $("what").textContent = "這個瀏覽器沒有開啟 Lean 需要的多執行緒（cross-origin isolation 沒開；無痕視窗常會擋）。請重新整理，或改用 Lean 4 Web。";
+    return;
+  }
+  if (build){
+    downloadTotal = build.sizes["lib.pack.gz"] + build.sizes[variant === "slim" ? "rt/slim/lean.wasm.gz" : "rt/lean.wasm.gz"] + build.sizes[variant === "slim" ? "rt/slim/lean.js" : "rt/lean.js"];
+    $("what").textContent = `在這個分頁執行 lean TinyLLM.lean。第一次要下載 ${mb(downloadTotal)}，之後用瀏覽器快取。`;
+  }
+}
+$("checkBtn").onclick = () => {
+  if (worker) return;
+  const src = currentSource();
+  if (src !== SRC) setSource(src);
+  errLines = new Set(); renderCode();
+  $("console").textContent = ""; $("console").hidden = true; $("theorems").hidden = true;
+  $("progress").hidden = false; $("bar").style.width = "0%";
+  $("checkBtn").disabled = true; $("edit").disabled = true;
+  setStatus("wait", "執行中");
+  const out = [];
+  worker = new Worker("lean-worker.js");
+  const phaseZh = { "Downloading Lean and its library": "下載 Lean 和函式庫", "Starting the Lean runtime": "啟動 Lean", "Importing the library": "載入函式庫", "Elaborating TinyLLM.lean": "Lean 正在檢查 TinyLLM.lean" };
+  worker.onmessage = (e) => {
+    const m = e.data;
+    if (m.type === "debug"){ console.log("[lean-worker]", m.data); return; }
+    if (m.type === "phase") $("what").textContent = (phaseZh[m.text] || m.text) + "…";
+    else if (m.type === "download"){
+      const frac = downloadTotal ? Math.min(1, m.loaded / downloadTotal) : 0;
+      $("bar").style.width = (frac * 45).toFixed(1) + "%";
+      $("what").textContent = `下載 Lean 和函式庫… ${mb(m.loaded)}${downloadTotal ? " / " + mb(downloadTotal) : ""}`;
+    }
+    else if (m.type === "modules"){
+      $("bar").style.width = (45 + 45 * m.loaded / m.total).toFixed(1) + "%";
+      $("what").textContent = `載入函式庫… ${m.loaded} / ${m.total} 個模組`;
+    }
+    else if (m.type === "stdout" || m.type === "stderr"){
+      const loc = /TinyLLM\.lean:(\d+):\d+: (error|warning)/.exec(m.data);
+      if (loc && loc[2] === "error") errLines.add(+loc[1]);
+      out.push(m.data); log(m.data, m.type === "stderr" || /:\d+:\d+: error/.test(m.data));
+    }
+    else if (m.type === "done"){
+      worker.terminate(); worker = null;
+      $("bar").style.width = "100%";
+      setTimeout(() => { $("progress").hidden = true; }, 600);
+      $("checkBtn").disabled = false; $("edit").disabled = false;
+      const ok = !m.hasErrors;
+      setStatus(ok ? "" : "bad", ok ? "Lean 接受了這個檔案" : "Lean 不接受這個檔案");
+      $("what").textContent = ok ? `每個 #eval 都跑完、每個定理都檢查通過，花了 ${m.seconds.toFixed(1)} 秒。`
+        : `Lean 回報${errLines.size ? " " + errLines.size + " 行有錯" : "了問題"}（${m.seconds.toFixed(1)} 秒）。`;
+      showTheorems(src, ok);
+      if (errLines.size) renderCode();
+      if (!out.length) log("（沒有輸出）");
+    }
+  };
+  worker.onerror = (e) => {
+    log("Worker 錯誤：" + (e.message || "未知"), true);
+    worker && worker.terminate(); worker = null;
+    $("checkBtn").disabled = false; $("edit").disabled = false;
+    setStatus("bad", "失敗");
+  };
+  worker.postMessage({ type: "run", code: src, variant });
+};
+
+fetch("build.json").then(r => r.ok ? r.json() : null).then(b => {
+  if (!b) return;
+  build = b;
+  $("closureNote").textContent = `${b.closure.modules} / ${b.closure.ofModules} 個模組`;
+  const when = new Date(b.builtAt).toISOString().slice(0, 10);
+  $("ci").textContent = `建置網站時（${when}）也用同一個 WebAssembly Lean（${b.leanVersion}）檢查過原本的檔案。`;
+}).catch(() => {}).finally(readyText);
+
+// ---------- Lean snippet in each step ----------
+const SNIPS = {
+  1: { parts: [["embed", "all"]], why: "E.getD t：拿第 t 列。這就是查表。" },
+  2: { parts: [["attend", [/let x :=/, /\bW[QKV]\b/]], ["vecMat", "all"]],
+       why: "q 在 let q 這行算；k 和 v 寫在後兩行的 vecMat c WK、vecMat c WV。vecMat 把 v 的每個數字乘上矩陣的一列再加起來，就是算式裡的每一個乘法。" },
+  3: { parts: [["attend", [/let scores/]], ["dot", "all"], ["blockAt", "all"]],
+       why: "dot 把對應位置相乘再加總，除以 Float.sqrt 4。Causal mask 寫在 blockAt：xs.take (i + 1) 只把前 i+1 個字交給 attend，後面的字根本不在清單裡。" },
+  4: { parts: [["attend", [/let w := softmax/]], ["softmax", "all"]], why: "softmax 先找最大值 m，算 e^(x − m)，再除以總和 s。" },
+  5: { parts: [["attend", [/let mix/, /vecMat mix WO/]], ["addV", "all"]], why: "scale wj 把每個 v 乘上權重，foldl addV 加起來得到 mix；最後一行乘 W_O，再 addV 加回 x（殘差）。" },
+  6: { parts: [["block", [/W1|W2/]], ["relu", "all"]], why: "h·W₁ → relu → ·W₂，再 addV h 加回去（第二個殘差）。" },
+  7: { parts: [["logits", [/E\.map/]], ["argmax", "all"]], why: "E.map (dot m)：m 和每個字的嵌入做內積，就是 logits；argmax 選最大的那個。" },
+  8: { parts: [["generate", [/argmax/]]], why: "Lean 檔只做 greedy：generate 每一步都取 argmax。Temperature、Top-K、Top-P 抽樣只在網頁裡，沒有寫進 Lean。" },
+};
+function defLines(nm){
+  const start = LINES.findIndex(l => new RegExp("^def " + nm + "\\b").test(l));
+  if (start < 0) return null;
+  let s = start; while (s > 0 && /^\/--/.test(LINES[s - 1])) s--;
+  let e = start;
+  while (e + 1 < LINES.length && LINES[e + 1].trim() !== "" && !/^(def |theorem |abbrev |#eval|\/--|\/-!)/.test(LINES[e + 1])) e++;
+  return { s, start, e };
+}
+function renderSnips(){
+  for (const [n, cfg] of Object.entries(SNIPS)){
+    const box = $("snip" + n); if (!box) continue;
+    let body = "", first = true; const where = [];
+    for (const [nm, hl] of cfg.parts){
+      const r = defLines(nm); if (!r) continue;
+      if (!first) body += `<div class="gap">⋯</div>`;
+      first = false;
+      const st = { block: false };
+      for (let k = r.s; k <= r.e; k++){
+        const on = hl === "all" ? k >= r.start : hl.some(re => re.test(LINES[k]));
+        body += `<div class="ln${on ? " hl" : ""}"><i>${k + 1}</i><span>${hlLine(LINES[k], st) || " "}</span></div>`;
+      }
+      where.push(`<b>${nm}</b> ${r.start + 1 === r.e + 1 ? "第 " + (r.start + 1) + " 行" : "第 " + (r.start + 1) + "–" + (r.e + 1) + " 行"}`);
+    }
+    box.innerHTML = `<div class="sh">TinyLLM.lean：${where.join("、")}（黃色是這一步）<button class="leanchip-full" data-def="${cfg.parts[0][0]}">在完整檔案看</button></div>`
+      + `<div class="sc">${body}</div><div class="why">${cfg.why}</div>`;
+  }
+}
+document.addEventListener("click", e => { const b = e.target.closest(".leanchip-full"); if (b) highlightDef(b.dataset.def); });
+
+// ---------- footnotes: number terms where they first appear, list them at the bottom ----------
+const GLOSS = {
+  lean: ["Lean 4", "一個程式語言，也是證明輔助工具：能執行程式（#eval），也能檢查數學證明是不是正確。"],
+  autoreg: ["自迴歸 Transformer", "一個字一個字往下預測的 Transformer：只預測下一個字，接回上下文，再預測下一個。GPT 也屬於這一類。"],
+  attn: ["attention（注意力）", "讓每個字依照「對得上」的程度，從其他字收集資訊。第 ②–⑤ 步就是 attention。"],
+  relu: ["ReLU", "max(0, x)：負數變 0，正數不變。這是整個模型唯一的非線性。"],
+  mlp: ["MLP", "多層感知器。這裡是「乘 W₁ → ReLU → 乘 W₂」，對每個位置各自加工，見第 ⑥ 步。"],
+  tied: ["共用嵌入表（tied weights）", "輸入查表和輸出算分數用同一張表 E，省下一半的權重。見第 ① 步和第 ⑦ 步。"],
+  greedy: ["greedy（貪婪選字）", "每次都選機率最高的字（argmax），不抽樣。第 ⑧ 步是抽樣的版本。"],
+  weights: ["權重", "模型裡由訓練決定的數字：E、W_Q、W_K、W_V、W_O、W₁、W₂，一共 156 個。"],
+  dim: ["維度 d", "每個字用幾個數字表示。這裡 d = 4，所以每個向量有 4 個數字。"],
+  head: ["head", "attention 的一組 W_Q、W_K、W_V。大型模型同時有很多組（multi-head），這裡只有 1 組。"],
+  posenc: ["位置編碼", "告訴模型「這是第幾個字」的額外向量。這裡沒有，所以兩個 the 的向量一模一樣，只能靠前文分辨。"],
+  argmax: ["argmax", "「最大的是第幾個」。例如 argmax [0.1, 0.7, 0.2] = 1。"],
+  softmax: ["softmax", "把一組分數變成加起來等於 1 的比例：e^(分數 − 最大值) ÷ 總和。分數越大，比例越大。見第 ④ 步。"],
+  sqrtd: ["√d", "分數除以維度的平方根（√4 = 2），讓分數不要太大，softmax 才不會太極端。"],
+  mask: ["Causal mask", "規定每個字只能看自己和前面的字：後面字的分數設成 −∞，softmax 之後權重就是 0。見第 ③ 步的紅色格子。"],
+  vec: ["向量", "一排數字，例如 [−0.6, −1.1, 0.3, 0.4]。"],
+  qkv: ["Q、K、V（query、key、value）", "q：我在找什麼；k：我能被找到的標籤；v：被找到時交出的內容。小寫是一個字的向量，大寫是全部字排成的矩陣。"],
+  matrix: ["矩陣", "排成列和欄的數字表。向量乘矩陣：結果的第 j 個數字 = 向量和矩陣第 j 欄做內積。"],
+  wqkv: ["W_Q、W_K、W_V", "三個 4×4 的權重矩陣，把字的向量 x 變成 q、k、v（例如 q = x·W_Q）。訓練學出來，每個字都用同一組。"],
+  transpose: ["Kᵀ（轉置）", "把矩陣的列和欄對調。這樣 Q·Kᵀ 一次就能算出所有的 qᵢ·kⱼ。"],
+  dot: ["內積", "兩個向量對應位置相乘，再全部加起來，結果是一個數字。例如 [1, 2]·[3, 4] = 1×3 + 2×4 = 11。"],
+  wo: ["W_O", "4×4 的權重矩陣，把 attention 混合出來的 mix 再轉一次，然後加回 x。"],
+  residual: ["殘差（residual）", "把輸入直接加回輸出（h = x + …），讓每一層只需要學「要修改多少」，原本的資訊不會被蓋掉。"],
+  w12: ["W₁、W₂", "MLP 的兩個權重矩陣：W₁ 是 4×8（展開成 8 個數字），W₂ 是 8×4（壓回 4 個）。"],
+  logits: ["logits", "每個字還沒變成機率的分數。這裡 logitₜ = m·E[t]，經過 softmax 之後才是機率。"],
+  bert: ["BERT / encoder", "另一類 Transformer：每個字能同時看前後所有字（沒有 causal mask），適合理解文字，不適合一個字一個字生成。"],
+  nopeek: ["no_peeking", "TinyLLM.lean 裡的定理：在後面加任何字，前面位置的結果都不會改變。這是 causal mask 的數學保證。"],
+  wasm: ["WebAssembly", "讓瀏覽器能執行編譯好的程式。這裡用它在你的分頁裡跑整個 Lean 編譯器。"],
+  eval: ["#eval", "Lean 的指令：把一個式子算出來、印出結果。只負責算，不證明任何事。"],
+  theorem: ["定理（theorem）", "要 Lean 確認一定成立的命題。只要有一個證明不成立，Lean 就不接受整個檔案。"],
+};
+let glossOrder = [], lastFn = null;
+function numberFootnotes(){
+  const links = [...document.querySelectorAll("sup.fn a[data-g]")];
+  const order = [];
+  links.forEach(a => { if (!order.includes(a.dataset.g)) order.push(a.dataset.g); });
+  links.forEach(a => {
+    const g = a.dataset.g, n = order.indexOf(g) + 1, [term, def] = GLOSS[g] || [g, ""];
+    a.textContent = n; a.title = `${term}：${def}`; a.setAttribute("aria-label", `註解 ${n}：${term}`);
+  });
+  if (order.join() === glossOrder.join()) return;
+  glossOrder = order;
+  $("glossList").innerHTML = order.map(g => { const [term, def] = GLOSS[g] || [g, ""];
+    return `<li id="g-${g}"><b>${esc(term)}</b>　${esc(def)}<a href="#" class="back">↩ 回到原文</a></li>`; }).join("");
+}
+document.addEventListener("click", e => {
+  const a = e.target.closest("sup.fn a");
+  if (a){
+    e.preventDefault(); lastFn = a;
+    const li = $("g-" + a.dataset.g); if (!li) return;
+    li.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    document.querySelectorAll(".gloss li.flash").forEach(x => x.classList.remove("flash"));
+    li.classList.add("flash"); setTimeout(() => li.classList.remove("flash"), 2500);
+    return;
+  }
+  const b = e.target.closest(".gloss .back");
+  if (b){
+    e.preventDefault();
+    if (lastFn && lastFn.isConnected && lastFn.offsetParent) lastFn.scrollIntoView({ block: "center" });
+    else window.scrollTo({ top: 0 });
+  }
+});
+
+// ---------- step-by-step navigation ----------
+const STEPS = [...document.querySelectorAll(".stepcard")];
+const LABELS = ["1","2","3","4","5","6","7","8","9","i"];
+let cur = 0;
+function goStep(i, scroll = true){
+  cur = Math.max(0, Math.min(STEPS.length - 1, i));
+  const all = $("showAll").checked;
+  STEPS.forEach((c, k) => c.hidden = !all && k !== cur);
+  $("stepPills").innerHTML = LABELS.map((l, k) => `<button data-k="${k}" class="${k < cur ? "done" : ""}" ${k === cur ? 'aria-current="step"' : ""} title="${esc(STEPS[k].querySelector(".step").textContent.replace(/^\S+/, "").trim())}">${l}</button>`).join("");
+  $("prevStep").disabled = cur === 0;
+  $("nextStep").disabled = cur === STEPS.length - 1;
+  if (STEPS[cur].id === "c5") render();            // canvas is drawn while visible
+  if (scroll && STEPS[cur].getBoundingClientRect().top < 0 || scroll && all) STEPS[cur].scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+}
+$("prevStep").onclick = () => goStep(cur - 1);
+$("nextStep").onclick = () => goStep(cur + 1);
+$("stepPills").addEventListener("click", e => { const b = e.target.closest("button"); if (b) goStep(+b.dataset.k); });
+$("showAll").onchange = () => goStep(cur, false);
+document.addEventListener("keydown", e => {
+  if (e.target.closest("input, textarea, select")) return;
+  if (e.key === "ArrowRight") goStep(cur + 1);
+  if (e.key === "ArrowLeft") goStep(cur - 1);
+});
+
+renderCode();
+render();
+goStep(0, false);
+})();
+</script>
+</body>
+</html>

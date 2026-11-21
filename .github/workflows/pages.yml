@@ -1,0 +1,53 @@
+name: Check Lean and deploy Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Fetch the pinned Lean WebAssembly runtime
+        run: |
+          url=$(node -p 'require("./runtime.json").fixture.url')
+          sha=$(node -p 'require("./runtime.json").fixture.sha256')
+          curl -fsSL -o fixture.tar.gz "$url"
+          echo "$sha  fixture.tar.gz" | sha256sum -c -
+          mkdir rt && tar -xzf fixture.tar.gz -C rt
+          echo '{ "type": "commonjs" }' > rt/bin/package.json
+
+      - name: Check TinyLLM.lean with the WebAssembly Lean and build the site
+        run: node tools/build.mjs rt dist
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
