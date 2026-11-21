@@ -1,83 +1,88 @@
 # Lean4TinyLLM
 
-> **▶ 線上試玩：[juice91.github.io/Lean4TinyLLM](https://juice91.github.io/Lean4TinyLLM/)**
+**English** · [繁體中文](README.zh-TW.md)
+
+> **▶ Try it live: [juice91.github.io/Lean4TinyLLM](https://juice91.github.io/Lean4TinyLLM/)**
 >
-> 不用安裝，打開就能一步一步看計算，並在瀏覽器裡用 Lean 檢查（第一次載入約 31 MB）。
+> Nothing to install: step through the computation in your browser and check it with Lean there too (about 31 MB on first load).
 
-一個最小的自迴歸 Transformer：160 個權重，在瀏覽器裡一步一步算給你看，最後直接在同一個分頁裡跑 Lean 4 檢查。
+A minimal autoregressive Transformer: 160 weights, computed step by step in your browser, then checked by Lean 4 running in the same tab.
 
-- 1 層 attention、1 個 ReLU MLP、輸入輸出共用嵌入表、greedy 選字
-- d = 4、MLP 寬度 8、詞表 8 個字、沒有位置編碼
-- 權重用一句話「the cat passed out on the piano .」訓練，四捨五入到小數一位
+- 1 attention layer, 1 ReLU MLP, one embedding table shared by input and output, greedy word choice
+- d = 4, MLP width 8, a vocabulary of 8 words, no positional encoding
+- Weights trained on one sentence, “the cat passed out on the piano .”, and rounded to one decimal place
 
-## 頁面
+## The page
 
-`site/index.html` 是一頁九個步驟（①–⑨），用「上一步／下一步」翻：
+`site/index.html` is one page of nine steps (①–⑨) that you page through with Back / Next:
 
-1. 查表 → 2. Q、K、V → 3. 分數 Sᵢⱼ 和 causal mask → 4. softmax → 5. 加權 V、殘差、2D 圖 → 6. MLP → 7. logits → 8. Temperature／Top-K／Top-P 抽樣 → 9. 在瀏覽器裡用 Lean 檢查
+1. lookup → 2. Q, K, V → 3. scores Sᵢⱼ and the causal mask → 4. softmax → 5. weighted V, residual, 2-D plot → 6. MLP → 7. logits → 8. Temperature / Top-K / Top-P sampling → 9. checking with Lean in the browser
 
-每一步都有圖例、完整算式，以及對應的 `TinyLLM.lean` 程式（黃色是這一步）。第一次出現的名詞有編號，註解在頁面最下面。
+Every step has its diagram, the full worked arithmetic, and the matching `TinyLLM.lean` code (this step's lines in yellow). Terms are numbered where they first appear, with a glossary at the bottom of the page.
+
+The page is in English and Traditional Chinese. It picks the language from your browser (Traditional Chinese gets Chinese, everything else gets English); the switch at the top right changes it and remembers your choice. Add `?lang=en` or `?lang=zh-TW` to the URL to choose directly.
 
 ## Lean
 
-`TinyLLM.lean` 只用 Lean 核心，不需要 Mathlib：
+`TinyLLM.lean` uses core Lean only, no Mathlib:
 
-- 三個 `#eval`：`<s> the`之後的 logits、機率，以及完整解碼出的句子
-- `decodes_sentence`：用 `native_decide` 檢查模型會解碼出整句
-- `no_peeking`：對任何輸入都成立的證明，後面加字不會改變前面位置的結果（causal mask）
-- `softmax_length`：softmax 輸出的長度等於輸入
+- three `#eval`s: the logits and probabilities after `<s> the`, and the fully decoded sentence
+- `decodes_sentence`: checks with `native_decide` that the model decodes the whole sentence
+- `no_peeking`: a proof for every input that appending words never changes earlier positions (the causal mask)
+- `softmax_length`: softmax returns as many values as it is given
 
-檔案開頭是 `prelude` + `import Init.Data.OfScientific`，所以只需要 Lean 核心函式庫 629 個模組裡的 185 個。
+The file starts with `prelude` + `import Init.Data.OfScientific`, so it needs only 185 of the 629 modules in Lean's core library.
 
 ```bash
 lean TinyLLM.lean
 ```
 
-## 在瀏覽器裡跑 Lean
+## Running Lean in the browser
 
-Lean 的 WebAssembly 版本來自 [cauli/lean4-wasm-in-browser](https://github.com/cauli/lean4-wasm-in-browser)（Apache-2.0），版本固定在 `runtime.json`。它需要 SharedArrayBuffer，所以頁面要在 cross-origin isolation 下執行；在沒辦法加 HTTP 標頭的主機（例如 GitHub Pages）上，由 [coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker)（MIT，`site/coi-serviceworker.js`）補上。
+The WebAssembly build of Lean comes from [cauli/lean4-wasm-in-browser](https://github.com/cauli/lean4-wasm-in-browser) (Apache-2.0), pinned in `runtime.json`. It needs SharedArrayBuffer, so the page must run with cross-origin isolation; on hosts that can't set HTTP headers (such as GitHub Pages), [coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker) (MIT, `site/coi-serviceworker.js`) provides it.
 
-## 建置
+## Building
 
 ```bash
-# 1. 下載固定版本的 runtime，並確認 SHA-256（見 runtime.json）
+# 1. Download the pinned runtime and check its SHA-256 (see runtime.json)
 curl -fsSL -o fixture.tar.gz "$(node -p 'require("./runtime.json").fixture.url')"
-shasum -a 256 fixture.tar.gz   # 應該是 runtime.json 裡的 sha256
+shasum -a 256 fixture.tar.gz   # should match the sha256 in runtime.json
 mkdir -p rt && tar -xzf fixture.tar.gz -C rt
 
-# 2. 建置：用 WebAssembly 的 lean 檢查 TinyLLM.lean 兩次（完整函式庫、只留用到的 185 個模組），
-#    再打包到 dist/
+# 2. Build: check TinyLLM.lean twice with the WebAssembly lean (full library, then only
+#    the 185 modules it uses), then package the site into dist/
 node tools/build.mjs rt dist
 ```
 
-`dist/` 是靜態網站。第一次開啟要下載約 31 MB（`lean.wasm` 17 MB、函式庫 13 MB，都壓縮過），之後用瀏覽器快取。
+`dist/` is a static site. The first visit downloads about 31 MB (`lean.wasm` 17 MB, library 13 MB, both compressed); later visits use the browser cache.
 
-本機測試時，伺服器要送出 `Cross-Origin-Opener-Policy: same-origin` 和 `Cross-Origin-Embedder-Policy: require-corp`；或者用一般的靜態伺服器，讓 coi-serviceworker 處理（第一次會重新整理一次）。
+To test locally, serve it with `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`, or use any static server and let coi-serviceworker handle it (the page reloads once on the first visit).
 
-## 重新訓練
+## Retraining
 
 ```bash
 node tools/train.js 2 > weights.json
 ```
 
-用中央差分算梯度、Adam、3000 步。seed 2 就是 `TinyLLM.lean` 裡的權重。
+Central-difference gradients, Adam, 3000 steps. Seed 2 produced the weights in `TinyLLM.lean`.
 
-## 檔案
+## Files
 
-| 檔案 | 內容 |
+| File | Contents |
 |---|---|
-| `TinyLLM.lean` | 模型、`#eval`、三個定理 |
-| `site/index.html` | 一步一步的頁面 |
-| `site/lean-worker.js` | 在 Web Worker 裡跑 WebAssembly 的 Lean |
-| `site/coi-serviceworker.js` | 補上 cross-origin isolation |
-| `tools/build.mjs` | 檢查 Lean、找出用到的模組、打包網站 |
-| `tools/lean-node.cjs` | 在 Node 裡跑 WebAssembly 的 Lean |
-| `tools/train.js` | 訓練權重 |
-| `runtime.json` | 固定的 Lean WebAssembly 版本和雜湊值 |
-| `LICENSE`、`LICENSE-TEXT`、`THIRD_PARTY_LICENSES` | 授權 |
+| `TinyLLM.lean` | the model, `#eval`s, three theorems |
+| `site/index.html` | the step-by-step page |
+| `site/i18n.js` | every piece of text on the page, in English and Chinese |
+| `site/lean-worker.js` | runs the WebAssembly Lean in a Web Worker |
+| `site/coi-serviceworker.js` | provides cross-origin isolation |
+| `tools/build.mjs` | checks with Lean, finds the modules used, packages the site |
+| `tools/lean-node.cjs` | runs the WebAssembly Lean in Node |
+| `tools/train.js` | trains the weights |
+| `runtime.json` | the pinned Lean WebAssembly version and hashes |
+| `LICENSE`, `LICENSE-TEXT`, `THIRD_PARTY_LICENSES` | licenses |
 
-## 授權
+## License
 
-- **程式碼**：[MIT](LICENSE)，© 2026 juice91
-- **文字**（README、網頁上的解說、算式說明、名詞註解）：[CC BY 4.0](LICENSE-TEXT)。轉載或改編時請標註「Lean4TinyLLM by juice91」並附上這個 repo 的連結
-- **第三方元件**維持原本的授權，見 [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES)：Lean 4 的 WebAssembly 版本和改寫自 cauli/lean4-wasm-in-browser 的兩個檔案是 Apache-2.0，coi-serviceworker 是 MIT
+- **Code**: [MIT](LICENSE), © 2026 juice91
+- **Text** (README, the page's explanations, worked formulas and glossary): [CC BY 4.0](LICENSE-TEXT). When you share or adapt it, credit “Lean4TinyLLM by juice91” and link to this repo
+- **Third-party components** keep their own licenses; see [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES). The WebAssembly build of Lean 4 and the two files adapted from cauli/lean4-wasm-in-browser are Apache-2.0; coi-serviceworker is MIT

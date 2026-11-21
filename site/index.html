@@ -1,15 +1,16 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>TinyLLM 最小範例</title>
-<meta name="description" content="一個 160 個權重的自迴歸 Transformer，每一步都能改數字、即時重算，最後在瀏覽器裡用 Lean 4 檢查。">
-<!-- WebAssembly 的執行緒需要 cross-origin isolation；GitHub Pages 不能加標頭，所以用這個 service worker 補上（第一次會重新整理一次）。 -->
+<title>TinyLLM: a minimal example</title>
+<meta name="description" content="A 160-weight autoregressive Transformer where you can change the numbers at every step and see it recompute instantly, then check it with Lean 4 in your browser.">
+<!-- Threads in WebAssembly need cross-origin isolation. GitHub Pages cannot send the headers, so this service worker adds them (the page reloads once). -->
 <script>window.coi = { coepCredentialless: () => false, quiet: true };</script>
 <script src="coi-serviceworker.js"></script>
+<script src="i18n.js"></script>
 <style>
-/* 版面：和「Attention 最小範例」一樣，單欄、編號卡片 ①→⑨，每張卡都能改數字、即時重算。 */
+/* Layout: like the "Attention 最小範例" artifact — one column of numbered cards ①→⑨, every number editable and recomputed live. */
 :root{
   --bg:#f6f8fa; --card:#ffffff; --border:#d0d7de; --muted:#57606a; --text:#1f2328;
   --blue:#0969da; --navy:#0a3069; --green:#1f883d; --red:#cf222e; --amber:#9a6700; --purple:#8250df;
@@ -177,6 +178,10 @@ sup.fn a:hover{text-decoration:underline}
 .gloss li b{color:var(--navy)}
 .gloss li.flash{background:var(--hl)}
 .gloss .back{font-size:12px;margin-left:6px;color:var(--blue);text-decoration:none;white-space:nowrap}
+.langbar{display:flex;justify-content:flex-end;gap:4px;margin-bottom:4px}
+.langbtn{font-size:13px;padding:3px 10px;border-radius:999px;border:1px solid var(--border);background:var(--card);color:var(--muted)}
+.langbtn[aria-pressed="true"]{background:var(--blue);border-color:var(--blue);color:#fff}
+.langbtn:hover:not([aria-pressed="true"]){border-color:var(--blue);color:var(--blue)}
 footer{margin-top:20px;font-size:12.5px;color:var(--muted)}
 footer a{color:var(--blue)}
 @media (max-width:560px){.cell{min-width:46px}.weights .row{grid-template-columns:72px minmax(0,1fr)}}
@@ -185,146 +190,146 @@ footer a{color:var(--blue)}
 </head>
 <body>
 <div class="wrap">
-  <h1>TinyLLM 最小範例（可操作，Lean 4<sup class="fn"><a href="#g-lean" data-g="lean"></a></sup> 驗證）</h1>
-  <p class="sub">一個最小的自迴歸 Transformer<sup class="fn"><a href="#g-autoreg" data-g="autoreg"></a></sup>（一個字一個字往下預測），從查表到選出下一個字，每一步都有：1 層 attention<sup class="fn"><a href="#g-attn" data-g="attn"></a></sup>、1 個 ReLU<sup class="fn"><a href="#g-relu" data-g="relu"></a></sup> MLP<sup class="fn"><a href="#g-mlp" data-g="mlp"></a></sup>、輸入輸出共用嵌入表<sup class="fn"><a href="#g-tied" data-g="tied"></a></sup>、greedy<sup class="fn"><a href="#g-greedy" data-g="greedy"></a></sup> 選字。比真正的模型少了 LayerNorm、位置編碼、多個 head 和多層，也沒有偏差項（bias）。160 個權重<sup class="fn"><a href="#g-weights" data-g="weights"></a></sup>是用一句話「the cat passed out on the piano .」訓練出來，再四捨五入到小數一位。改下面的數字或切換開關，每一步都會即時重算；最後一張卡在瀏覽器裡直接跑 Lean，檢查同一個模型。</p>
-  <ul class="specs"><li>維度 d<sup class="fn"><a href="#g-dim" data-g="dim"></a></sup> <b>4</b></li><li>MLP 寬度 <b>8</b></li><li>詞表 <b>8</b></li><li>層數 <b>1</b></li><li>head<sup class="fn"><a href="#g-head" data-g="head"></a></sup> <b>1</b></li><li>位置編碼<sup class="fn"><a href="#g-posenc" data-g="posenc"></a></sup> <b>無</b></li><li>權重 <b>160</b></li></ul>
+  <div class="langbar" role="group" aria-label="Language / 語言">
+    <button type="button" class="langbtn" data-lang="en" lang="en">English</button>
+    <button type="button" class="langbtn" data-lang="zh" lang="zh-Hant">中文</button>
+  </div>
+  <h1 data-i18n="h1"></h1>
+  <p class="sub" data-i18n="sub"></p>
+  <ul class="specs" data-i18n="specs"></ul>
 
   <div class="card">
     <div class="formula" id="formula">next = argmax<sup class="fn"><a href="#g-argmax" data-g="argmax"></a></sup> softmax<sup class="fn"><a href="#g-softmax" data-g="softmax"></a></sup>( MLP( x + Attention(x) ) · Eᵀ )</div>
-    <div class="lbl">上下文（最後一個字用來預測下一個字）</div>
+    <div class="lbl" data-i18n="lblCtx"></div>
     <div class="chips" id="ctx"></div>
-    <div class="lbl">加一個字</div>
+    <div class="lbl" data-i18n="lblAdd"></div>
     <div class="chips" id="vocab"></div>
-    <div class="controls pick" role="radiogroup" aria-label="選字方式" style="margin-top:12px">
-      <span class="lbl" style="margin:0">選字方式</span>
-      <label class="toggle"><input type="radio" name="pick" id="pickGreedy" value="greedy" checked> greedy（每次選機率最高的）</label>
-      <label class="toggle"><input type="radio" name="pick" id="pickSample" value="sample"> 抽樣（照第 ⑧ 步的 T、Top-K、Top-P 抽）</label>
+    <div class="controls pick" role="radiogroup" data-i18n-aria="pickAria" style="margin-top:12px">
+      <span class="lbl" style="margin:0" data-i18n="pickLbl"></span>
+      <label class="toggle"><input type="radio" name="pick" id="pickGreedy" value="greedy" checked> <span data-i18n="pickGreedy"></span></label>
+      <label class="toggle"><input type="radio" name="pick" id="pickSample" value="sample"> <span data-i18n="pickSample"></span></label>
     </div>
     <div class="controls" style="margin-top:10px">
-      <button class="btn primary" id="step">預測下一個字</button>
-      <button class="btn" id="runAll">一直預測到「.」</button>
-      <button class="btn" id="back">刪掉最後一個</button>
-      <button class="btn" id="reset">重設成「&lt;s&gt; the」</button>
+      <button class="btn primary" id="step"></button>
+      <button class="btn" id="runAll"></button>
+      <button class="btn" id="back" data-i18n="back"></button>
+      <button class="btn" id="reset" data-i18n="reset"></button>
     </div>
     <div class="controls" style="margin-top:10px">
-      <label class="toggle"><input type="checkbox" id="optScale" checked> 除以 √d<sup class="fn"><a href="#g-sqrtd" data-g="sqrtd"></a></sup></label>
-      <label class="toggle"><input type="checkbox" id="optMask" checked> Causal mask<sup class="fn"><a href="#g-mask" data-g="mask"></a></sup>（只能看前面）</label>
-      <button class="btn" id="restoreW">還原原本的 Lean 檔</button>
+      <label class="toggle"><input type="checkbox" id="optScale" checked> <span data-i18n="optScale"></span></label>
+      <label class="toggle"><input type="checkbox" id="optMask" checked> <span data-i18n="optMask"></span></label>
+      <button class="btn" id="restoreW" data-i18n="restoreW"></button>
     </div>
     <div class="answer" id="answer" style="margin-top:10px"></div>
     <div class="agree" id="agree"></div>
   </div>
 
   <div class="card stepcard" id="c1" data-step="0">
-    <div class="step"><span class="num">1</span>查表：每個字換成一個向量<sup class="fn"><a href="#g-vec" data-g="vec"></a></sup><button class="leanchip" data-def="embed">embed</button></div>
-    <div class="formula">xⱼ = E[第 j 個字]</div>
+    <div class="step"><span class="num">1</span><span data-i18n="c1t"></span><button class="leanchip" data-def="embed">embed</button></div>
+    <div class="formula" data-i18n="c1f"></div>
     <div class="mats" id="c1mats" style="margin-top:10px"></div>
-    <p class="note">模型不認識文字，只認識數字。嵌入表 E 的每一列是一個字的 4 個數字，第一步就是查表。這個模型沒有位置編碼：兩個 “the” 拿到的向量完全一樣，它要靠 attention 從前文分辨自己是哪一個。</p>
+    <p class="note" data-i18n="c1n"></p>
     <div class="leansnip" id="snip1"></div>
   </div>
 
   <div class="card stepcard" id="c2" data-step="1">
-    <div class="step"><span class="num">2</span>Query、Key、Value<sup class="fn"><a href="#g-qkv" data-g="qkv"></a></sup>：X 乘上三個矩陣<sup class="fn"><a href="#g-matrix" data-g="matrix"></a></sup><button class="leanchip" data-def="attend">attend</button></div>
+    <div class="step"><span class="num">2</span><span data-i18n="c2t"></span><button class="leanchip" data-def="attend">attend</button></div>
     <div class="formula">Q = X·W_Q<sup class="fn"><a href="#g-wqkv" data-g="wqkv"></a></sup>    K = X·W_K    V = X·W_V</div>
     <div class="mats" id="c2mats" style="margin-top:10px"></div>
-    <p class="note">Q（查詢）：我在找什麼。K（鍵）：我有什麼可以被找。V（值）：被找到時要給出的內容。三個都是同一個 X 乘上不同的矩陣，矩陣是訓練學出來的。</p>
-    <div class="lbl">算式：最後一個字的 q 怎麼算</div><div class="calc" id="c2calc"></div>
+    <p class="note" data-i18n="c2n"></p>
+    <div class="lbl" data-i18n="c2l"></div><div class="calc" id="c2calc"></div>
     <div class="leansnip" id="snip2"></div>
   </div>
 
   <div class="card stepcard" id="c3" data-step="2">
-    <div class="step"><span class="num">3</span>分數 Q · Kᵀ<sup class="fn"><a href="#g-transpose" data-g="transpose"></a></sup>，再套上 mask<button class="leanchip" data-def="attend">attend</button></div>
+    <div class="step"><span class="num">3</span><span data-i18n="c3t"></span><button class="leanchip" data-def="attend">attend</button></div>
     <div class="formula" id="c3formula"></div>
     <div class="mats" id="c3mats" style="margin-top:10px"></div>
     <p class="note" id="c3note"></p>
-    <div class="lbl">算式：最後一列的分數怎麼算</div><div class="calc" id="c3calc"></div>
+    <div class="lbl" data-i18n="c3l"></div><div class="calc" id="c3calc"></div>
     <div class="leansnip" id="snip3"></div>
   </div>
 
   <div class="card stepcard" id="c4" data-step="3">
-    <div class="step"><span class="num">4</span>Softmax：每一列加起來 = 1<button class="leanchip" data-def="softmax">softmax</button></div>
+    <div class="step"><span class="num">4</span><span data-i18n="c4t"></span><button class="leanchip" data-def="softmax">softmax</button></div>
     <div class="formula">wᵢⱼ = e^(Sᵢⱼ − max) / Σₖ e^(Sᵢₖ − max)</div>
     <div class="weights" id="c4bars" style="margin-top:10px"></div>
     <div class="legend" id="c4legend"></div>
-    <p class="note" id="c4note">每一條代表一個位置「把注意力分給誰」。顏色是被注意的那個字。</p>
-    <div class="lbl">算式：最後一列的 softmax 怎麼算</div><div class="calc" id="c4calc"></div>
+    <p class="note" data-i18n="c4n"></p>
+    <div class="lbl" data-i18n="c4l"></div><div class="calc" id="c4calc"></div>
     <div class="leansnip" id="snip4"></div>
   </div>
 
   <div class="card stepcard" id="c5" data-step="4">
-    <div class="step"><span class="num">5</span>用權重加權 V，再乘 W_O<sup class="fn"><a href="#g-wo" data-g="wo"></a></sup>、加回 x<button class="leanchip" data-def="attend">attend</button></div>
+    <div class="step"><span class="num">5</span><span data-i18n="c5t"></span><button class="leanchip" data-def="attend">attend</button></div>
     <div class="formula">mixᵢ = Σⱼ wᵢⱼ·Vⱼ    hᵢ = xᵢ + mixᵢ·W_O</div>
     <div id="c5calc"></div>
     <div class="controls" style="margin:10px 0 6px">
-      <label class="toggle">畫哪兩個維度
+      <label class="toggle"><span data-i18n="dimsLbl"></span>
         <select id="dims"><option value="0,1">d0 × d1</option><option value="0,2">d0 × d2</option><option value="0,3">d0 × d3</option><option value="1,2">d1 × d2</option><option value="1,3">d1 × d3</option><option value="2,3">d2 × d3</option></select></label>
     </div>
     <canvas id="cv" width="760" height="440"></canvas>
-    <div class="legend"><span><span class="dot" style="background:var(--green)"></span>V（原本的內容）</span><span><span class="dot" style="background:var(--card);border:2px solid var(--blue)"></span>mix（混合後）</span></div>
-    <p class="note">V 是 4 維，這裡選兩個維度畫出來。mix 一定落在 V 點圍成的範圍內，因為它就是 V 的加權平均（投影到任兩個維度也一樣）。最後的 W_O 和殘差<sup class="fn"><a href="#g-residual" data-g="residual"></a></sup>「加回 x」讓 attention 只需要學要修改多少，原本的資訊不會被蓋掉。</p>
+    <div class="legend"><span><span class="dot" style="background:var(--green)"></span><span data-i18n="legV"></span></span><span><span class="dot" style="background:var(--card);border:2px solid var(--blue)"></span><span data-i18n="legMix"></span></span></div>
+    <p class="note" data-i18n="c5n"></p>
     <div class="leansnip" id="snip5"></div>
   </div>
 
   <div class="card stepcard" id="c6" data-step="5">
-    <div class="step"><span class="num">6</span>MLP：展開、ReLU、壓回去<button class="leanchip" data-def="block">block</button></div>
+    <div class="step"><span class="num">6</span><span data-i18n="c6t"></span><button class="leanchip" data-def="block">block</button></div>
     <div class="formula">u = ReLU(h·W₁<sup class="fn"><a href="#g-w12" data-g="w12"></a></sup>)    m = h + u·W₂</div>
     <div id="c6vals"></div>
     <p class="note" id="c6note"></p>
-    <div class="lbl">算式：每一個乘法</div><div class="calc" id="c6calc"></div>
+    <div class="lbl" data-i18n="c6l"></div><div class="calc" id="c6calc"></div>
     <div class="leansnip" id="snip6"></div>
   </div>
 
   <div class="card stepcard" id="c7" data-step="6">
-    <div class="step"><span class="num">7</span>Logits<sup class="fn"><a href="#g-logits" data-g="logits"></a></sup> → 機率 → 選字<button class="leanchip" data-def="logits">logits</button></div>
+    <div class="step"><span class="num">7</span><span data-i18n="c7t"></span><button class="leanchip" data-def="logits">logits</button></div>
     <div class="formula">logitₜ = m·E[t]    p = softmax(logits)    next = argmax p</div>
     <div class="scroll" style="margin-top:10px"><table class="t" id="c7table"></table></div>
-    <p class="note">輸出層共用嵌入表 E（tied weights）：m 的方向越像哪個字的嵌入向量，那個字的分數就越高。這裡用 greedy，永遠選最高的。</p>
-    <div class="lbl">算式：每個 logit 怎麼算</div><div class="calc" id="c7calc"></div>
+    <p class="note" data-i18n="c7n"></p>
+    <div class="lbl" data-i18n="c7l"></div><div class="calc" id="c7calc"></div>
     <div class="leansnip" id="snip7"></div>
   </div>
 
   <div class="card stepcard" id="c8" data-step="7">
-    <div class="step"><span class="num">8</span>下一個字怎麼選：logits → Temperature → Top-K → Top-P → 抽樣</div>
-    <p class="note" style="margin-top:0">用第 7 步同一組 logits，改成抽樣。最上面的「選字方式」切到「抽樣」時，「預測下一個字」和「一直預測到「.」」也會用這裡的設定。</p>
+    <div class="step"><span class="num">8</span><span data-i18n="c8t"></span></div>
+    <p class="note" style="margin-top:0" data-i18n="c8intro"></p>
     <div class="sliders">
       <label for="temp"><span>Temperature <b id="tVal"></b></span><input type="range" id="temp" min="0.05" max="3" step="0.05" value="1"></label>
       <label for="topk"><span>Top-K <b id="kVal"></b></span><input type="range" id="topk" min="1" max="8" step="1" value="8"></label>
       <label for="topp"><span>Top-P <b id="pVal"></b></span><input type="range" id="topp" min="0.05" max="1" step="0.05" value="1"></label>
     </div>
-    <div class="controls" style="margin:6px 0 4px"><button class="btn" id="resetSamp">重設（T=1、全開）</button></div>
+    <div class="controls" style="margin:6px 0 4px"><button class="btn" id="resetSamp" data-i18n="resetSamp"></button></div>
     <div class="scroll"><table class="t" id="vocabTable"></table></div>
     <div class="controls" style="margin-top:12px">
-      <button class="btn primary" id="s1">抽 1 次</button>
-      <button class="btn" id="s100">抽 100 次</button>
-      <button class="btn" id="sClear">清除</button>
-      <button class="btn" id="sAppend" disabled>把抽到的字接到上下文</button>
+      <button class="btn primary" id="s1" data-i18n="s1"></button>
+      <button class="btn" id="s100" data-i18n="s100"></button>
+      <button class="btn" id="sClear" data-i18n="sClear"></button>
+      <button class="btn" id="sAppend" data-i18n="sAppend" disabled></button>
       <span id="picked"></span>
     </div>
     <div id="hist" style="margin-top:8px"></div>
-    <p class="note">順序：logits ÷ T → softmax → 只留機率最高的 K 個 → 再從最高往下累加到 P 為止 → 剩下的重新正規化 → 抽樣。<br>
-      • <b>Temperature</b>：T &lt; 1 讓高分的字更突出（更保守），T &gt; 1 讓分布更平（更有創意也更容易亂講），T → 0 幾乎等於每次都選最高分（greedy）。<br>
-      • <b>Top-K</b>：只留前 K 名，固定數量。<br>
-      • <b>Top-P</b>（nucleus）：留下累積機率剛好到 P 的最少字數，數量會隨分布改變。分布很集中時只留 1–2 個，很平時會留很多個。<br>
-      這個模型只學過一句話，機率非常集中，T 拉到 2 以上才常抽到別的字。</p>
+    <p class="note" data-i18n="c8n"></p>
     <div class="leansnip" id="snip8"></div>
   </div>
 
   <div class="card stepcard" id="c9" data-step="8">
-    <div class="step"><span class="num">9</span>用 Lean 檢查：在你的瀏覽器裡跑</div>
-    <p class="note" style="margin-top:0">上面 1–7 步就是這個 Lean 檔案在做的事（點每張卡右上角的名字可以跳到對應的定義）。可以按「直接改原始碼」改任何地方（例如權重），按「完成」後上面 1–8 步會用新的檔案重算。按「用 Lean 檢查」會在這個分頁裡跑真正的 Lean 編譯器（WebAssembly<sup class="fn"><a href="#g-wasm" data-g="wasm"></a></sup>），執行三個 <code>#eval<sup class="fn"><a href="#g-eval" data-g="eval"></a></sup></code> 並檢查三個定理<sup class="fn"><a href="#g-theorem" data-g="theorem"></a></sup>，不經過任何伺服器。</p>
+    <div class="step"><span class="num">9</span><span data-i18n="c9t"></span></div>
+    <p class="note" style="margin-top:0" data-i18n="c9n"></p>
     <div class="leanbar">
       <span class="fname">TinyLLM.lean</span>
-      <button class="btn" id="edit">直接改原始碼</button>
-      <button class="btn" id="copy">複製</button>
-      <a class="btn" id="openWeb" href="https://live.lean-lang.org" target="_blank" rel="noopener">在 Lean 4 Web 開啟 ↗</a>
+      <button class="btn" id="edit"></button>
+      <button class="btn" id="copy" data-i18n="copy"></button>
+      <a class="btn" id="openWeb" href="https://live.lean-lang.org" target="_blank" rel="noopener" data-i18n="openWeb"></a>
     </div>
     <div class="code" id="code"></div>
-    <textarea class="editor" id="editor" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="編輯 TinyLLM.lean" hidden></textarea>
+    <textarea class="editor" id="editor" spellcheck="false" autocapitalize="off" autocomplete="off" data-i18n-aria="editorAria" hidden></textarea>
     <div class="check" aria-live="polite">
       <div class="check-h">
-        <span class="pill wait" id="status">還沒跑</span>
-        <span class="what" id="what">在這個分頁執行 <code>lean TinyLLM.lean</code>。</span>
-        <button class="btn primary" id="checkBtn">用 Lean 檢查</button>
+        <span class="pill wait" id="status"></span>
+        <span class="what" id="what"></span>
+        <button class="btn primary" id="checkBtn" data-i18n="checkBtn"></button>
       </div>
       <div class="progress" id="progress" hidden><div id="bar"></div></div>
       <div class="theorems" id="theorems" hidden></div>
@@ -334,38 +339,48 @@ footer a{color:var(--blue)}
   </div>
 
   <div class="card stepcard" id="c10" data-step="9">
-    <div class="step"><span class="num">i</span>重點</div>
+    <div class="step"><span class="num">i</span><span data-i18n="c10t"></span></div>
     <ul class="points note" style="color:var(--text)">
-      <li>沒開 mask 時每個 token 都能看所有人，這是 BERT<sup class="fn"><a href="#g-bert" data-g="bert"></a></sup> 那類 encoder 的做法（雙向）。開了 causal mask，token 只能看自己和前面的，這是自迴歸 Transformer 一個字一個字生成文字的方式。Token 0 只能看自己，所以它的 mix 就等於它自己的 V。</li>
-      <li>關掉 mask 時，最後一個字的預測不會變：它本來就看得到全部。改變的是前面的位置，它們開始偷看未來。Lean 的 <code>no_peeking</code><sup class="fn"><a href="#g-nopeek" data-g="nopeek"></a></sup> 定理證明的正是「後面加字不會改變前面的位置」。</li>
-      <li>√d 讓分數不會因為維度變大而太大，避免 softmax 變得太極端。模型是開著 √d 訓練的，關掉後預測可能改變。</li>
-      <li>Attention 決定「每個位置變成什麼向量」，Temperature／Top-K／Top-P 只在最後一步決定「下一個字怎麼選」，兩者互不影響。</li>
-      <li>檔案開頭是 <code>prelude</code> 加上只 import <code>Init.Data.OfScientific</code>，所以瀏覽器只需要載入 <span id="closureNote">一部分</span> Lean 核心函式庫，而不是全部。</li>
+      <li data-i18n="kp1"></li>
+      <li data-i18n="kp2"></li>
+      <li data-i18n="kp3"></li>
+      <li data-i18n="kp4"></li>
+      <li data-i18n="kp5"></li>
     </ul>
   </div>
 
-  <nav class="card stepnav" id="stepnav" aria-label="步驟">
-    <button class="btn" id="prevStep">← 上一步</button>
+  <nav class="card stepnav" id="stepnav" data-i18n-aria="navAria">
+    <button class="btn" id="prevStep" data-i18n="navPrev"></button>
     <div class="pills" id="stepPills"></div>
-    <button class="btn primary" id="nextStep">下一步 →</button>
-    <label class="toggle small"><input type="checkbox" id="showAll"> 全部顯示</label>
+    <button class="btn primary" id="nextStep" data-i18n="navNext"></button>
+    <label class="toggle small"><input type="checkbox" id="showAll"> <span data-i18n="showAll"></span></label>
   </nav>
 
-  <section class="card glossary" id="glossary" aria-label="名詞註解">
-    <div class="step"><span class="num">註</span>名詞註解</div>
+  <section class="card glossary" id="glossary" data-i18n-aria="glossAria">
+    <div class="step"><span class="num" data-i18n="glossNum"></span><span data-i18n="glossT"></span></div>
     <ol class="gloss" id="glossList"></ol>
   </section>
 
-  <footer>
-    Lean 的 WebAssembly 版本來自 <a href="https://github.com/cauli/lean4-wasm-in-browser" target="_blank" rel="noopener">cauli/lean4-wasm-in-browser</a>（Apache-2.0）；cross-origin isolation 來自 <a href="https://github.com/gzuidhof/coi-serviceworker" target="_blank" rel="noopener">coi-serviceworker</a>（MIT）。<br>
-    TinyLLM 的程式碼採 <a href="LICENSE.txt">MIT</a> 授權，文字（解說、算式說明、名詞註解）採 <a href="https://creativecommons.org/licenses/by/4.0/deed.zh-hant" target="_blank" rel="noopener">CC BY 4.0</a>（<a href="LICENSE-TEXT.txt">全文</a>），© 2026 juice91；第三方元件的授權見 <a href="THIRD_PARTY_LICENSES.txt">THIRD_PARTY_LICENSES</a>。
-  </footer>
+  <footer data-i18n="footer"></footer>
 </div>
 
 <script type="text/plain" id="lean-src">__LEAN__</script>
 <script>
 (function(){
 const $ = id => document.getElementById(id);
+
+// ---------- language: ?lang= > saved choice > browser (Traditional Chinese → zh, anything else → en) ----------
+const I18N = window.TINYLLM_I18N;
+function detectLang(){
+  const q = new URLSearchParams(location.search).get("lang");
+  if (q) return /^zh/i.test(q) ? "zh" : "en";
+  try { const v = localStorage.getItem("tinyllm-lang"); if (v === "en" || v === "zh") return v; } catch (e) {}
+  const first = ((navigator.languages && navigator.languages[0]) || navigator.language || "en").toLowerCase();
+  return /^zh-(tw|hk|mo|hant)/.test(first) ? "zh" : "en";
+}
+let LANG = detectLang();
+const t = (k, ...a) => { const v = (I18N[LANG] || I18N.en)[k] ?? I18N.en[k]; return typeof v === "function" ? v(...a) : v; };
+const fmt = s => String(s).replace(/\{fn:(\w+)\}/g, (_, g) => `<sup class="fn"><a href="#g-${g}" data-g="${g}"></a></sup>`);
 const ORIGINAL = $("lean-src").textContent.replace(/^\n/, "");
 let SRC = ORIGINAL;
 const MATS = ["E", "WQ", "WK", "WV", "WO", "W1", "W2"];
@@ -375,7 +390,7 @@ function parseWeights(src){
   const w = {};
   for (const n of MATS){
     const m = src.match(new RegExp("def " + n + " : Mat := (\\[[\\s\\S]*?\\]\\])"));
-    if (!m) throw new Error("找不到 " + n);
+    if (!m) throw new Error(t("errNoMat", n));
     w[n] = JSON.parse(m[1]);
   }
   w.VOCAB = JSON.parse(src.match(/def vocab : List String := (\[[^\]]*\])/)[1]);
@@ -384,7 +399,7 @@ function parseWeights(src){
     && ["WQ", "WK", "WV", "WO"].every(k => w[k].length === D && w[k].every(r => r.length === D))
     && w.W1.length === D && w.W1.every(r => r.length === H) && w.W2.length === H && w.W2.every(r => r.length === D)
     && MATS.every(k => w[k].every(r => r.every(x => typeof x === "number" && isFinite(x))));
-  if (!ok) throw new Error("矩陣形狀不對");
+  if (!ok) throw new Error(t("errShape"));
   return w;
 }
 const ORIG_W = parseWeights(ORIGINAL);
@@ -475,92 +490,91 @@ function render(){
   // controls
   $("ctx").innerHTML = toks.map((t, i) => `<span class="chip${i === L ? " last" : ""}">${name(t)}</span>`).join("")
     + (pickMode === "greedy"
-      ? `<span class="chip next" title="greedy：機率最高的字">${name(R.next)} ?</span>`
-      : `<span class="chip next" title="抽樣：按「抽下一個字」才知道">抽 ?</span>`);
+      ? `<span class="chip next" title="${t("chipGreedyTitle")}">${name(R.next)} ?</span>`
+      : `<span class="chip next" title="${t("chipSampleTitle")}">${t("chipSample")}</span>`);
   $("vocab").innerHTML = W.VOCAB.map((w, t) => `<button class="vbtn" data-t="${t}">${esc(w)}</button>`).join("");
-  $("step").textContent = pickMode === "greedy" ? "預測下一個字（選最高）" : "抽下一個字";
-  $("runAll").textContent = pickMode === "greedy" ? "一直預測到「.」" : "一直抽到「.」";
+  $("step").textContent = pickMode === "greedy" ? t("stepGreedy") : t("stepSample");
+  $("runAll").textContent = pickMode === "greedy" ? t("runGreedy") : t("runSample");
   {
     const order = R.p.map((_, t) => t).sort((a, b) => R.p[b] - R.p[a]), [a1, a2] = order;
-    const drew = lastDraw ? `剛剛抽到 <b>${name(lastDraw.t)}</b>（抽中的機率 ${f(lastDraw.p * 100, 1)}%）。` : "";
+    const drew = lastDraw ? t("drew", name(lastDraw.t), f(lastDraw.p * 100, 1)) : "";
     if (pickMode === "greedy"){
-      const close = R.p[a1] - R.p[a2] < 0.05 ? `第二名 ${name(a2)}（${f(R.p[a2] * 100, 1)}%）只差一點，切換成「抽樣」才可能選到它。` : "";
-      $("answer").innerHTML = `下一個字（選機率最高的）：<b>${name(R.next)}</b>，機率 ${f(R.p[R.next] * 100, 1)}%。${close}`;
+      const close = R.p[a1] - R.p[a2] < 0.05 ? t("close", name(a2), f(R.p[a2] * 100, 1)) : "";
+      $("answer").innerHTML = t("answerGreedy", name(R.next), f(R.p[R.next] * 100, 1), close);
     } else {
       const rows = samplingDist(R.lg), { T, K, P } = sampSettings();
       const live = rows.filter(r => r.final >= 0.001).sort((x, y) => y.final - x.final);
-      const top = live.slice(0, 3).map(r => `${name(r.t)} ${f(r.final * 100, 1)}%`).join("、");
-      $("answer").innerHTML = `${drew}下一個字用抽的（T=${T.toFixed(2)}、Top-K ${K}、Top-P ${P.toFixed(2)}）：${top}${live.length > 3 ? "……" : ""}`;
+      const top = live.slice(0, 3).map(r => `${name(r.t)} ${f(r.final * 100, 1)}%`).join(t("sep")) + (live.length > 3 ? t("more") : "");
+      $("answer").innerHTML = t("answerSample", drew, T.toFixed(2), K, P.toFixed(2), top);
     }
   }
   $("back").disabled = toks.length <= 1;
 
   // ① embed
-  $("c1mats").innerHTML = matHTML("X（上下文的向量，每列一個字）", R.X, { rowHdr, colHdr: ["d0", "d1", "d2", "d3"] });
+  $("c1mats").innerHTML = matHTML(t("matX"), R.X, { rowHdr, colHdr: ["d0", "d1", "d2", "d3"] });
 
   // ② Q K V
   $("c2mats").innerHTML = matHTML("Q", R.Q, { rowHdr }) + matHTML("K", R.K) + matHTML("V", R.V);
-  $("c2calc").innerHTML = `最後一個字「${names[L]}」：x = ${vstr(R.X[L])}\n` + vmLines("q", R.X[L], W.WQ, R.Q[L]);
+  $("c2calc").innerHTML = t("lastWord", names[L], vstr(R.X[L])) + "\n" + vmLines("q", R.X[L], W.WQ, R.Q[L]);
 
   // ③ scores
   const qHdr = toks.map((_, i) => `q${sub(i)}·${names[i]}`), kHdr = toks.map((_, j) => `k${sub(j)}·${names[j]}`);
-  const corner = `<span>列 qᵢ 在看</span><span>欄 kⱼ 被看</span>`;
-  $("c3formula").textContent = opts.scale ? "Sᵢⱼ = qᵢ · kⱼ / √d        （d = 4，√d = 2）" : "Sᵢⱼ = qᵢ · kⱼ        （目前沒除以 √d）";
-  let box = matHTML("Q·Kᵀ（還沒除）", R.S, { rowHdr: qHdr, colHdr: kHdr, corner, idx: "", hlRow: L });
+  const corner = t("corner");
+  $("c3formula").textContent = opts.scale ? t("c3fScale") : t("c3fNoScale");
+  let box = matHTML(t("matQK"), R.S, { rowHdr: qHdr, colHdr: kHdr, corner, idx: "", hlRow: L });
   if (opts.scale) box += matHTML("÷ √4", R.S2, { rowHdr: qHdr, colHdr: kHdr, idx: "S", hlRow: L });
-  if (opts.mask) box += matHTML("套上 mask", R.S2, { rowHdr: qHdr, colHdr: kHdr, idx: "S", mask: R.M, hlRow: L });
+  if (opts.mask) box += matHTML(t("matMask"), R.S2, { rowHdr: qHdr, colHdr: kHdr, idx: "S", mask: R.M, hlRow: L });
   $("c3mats").innerHTML = box;
-  $("c3note").innerHTML = "格子 Sᵢⱼ（第 i 列、第 j 欄）= 第 i 個字的 qᵢ 和第 j 個字的 kⱼ 做內積<sup class=\"fn\"><a href=\"#g-dot\" data-g=\"dot\"></a></sup>：越大代表越「對得上」。黃底的是最後一列，下面的算式就是在算這一列。"
-    + (opts.mask ? "紅色格子是未來的字，自迴歸模型不准偷看，設成 −∞，softmax 後就是 0（Lean 裡寫成 xs.take (i+1)）。" : "現在沒有 mask：每個位置都看得到後面的字。");
+  $("c3note").innerHTML = fmt(t("c3note")) + (opts.mask ? t("c3maskOn") : t("c3maskOff"));
   {
     const qL = `q${sub(L)}`, div = opts.scale ? " / 2" : "";
-    let t = `${qL} = ${vstr(R.Q[L])}   <span class="dim">（${names[L]} 的 query，第 ② 步）</span>\n`
-      + R.K.map((k, j) => `k${sub(j)} = ${vstr(k)}   <span class="dim">（${names[j]} 的 key）</span>`).join("\n") + "\n";
+    let txt = `${qL} = ${vstr(R.Q[L])}   <span class="dim">${t("qOf", names[L])}</span>\n`
+      + R.K.map((k, j) => `k${sub(j)} = ${vstr(k)}   <span class="dim">${t("kOf", names[j])}</span>`).join("\n") + "\n";
     R.K.forEach((k, j) => {
       const S = `S${ij(L, j)}`, pad = " ".repeat(S.length + 1);
-      if (R.M[L][j]){ t += `\n${S} = −∞   <span class="dim">（k${sub(j)} 是未來的字，被 mask 擋掉）</span>\n`; return; }
-      t += `\n${S} = ${qL} · k${sub(j)}${opts.scale ? " / √4" : ""}   <span class="dim">（${L}·${names[L]} 看 ${j}·${names[j]}）</span>\n`
+      if (R.M[L][j]){ txt += `\n${S} = −∞   <span class="dim">${t("future", sub(j))}</span>\n`; return; }
+      txt += `\n${S} = ${qL} · k${sub(j)}${opts.scale ? " / √4" : ""}   <span class="dim">${t("looks", `${L}·${names[L]}`, `${j}·${names[j]}`)}</span>\n`
         + `${pad}= (${R.Q[L].map((_, d) => `${qL}[${d}]×k${sub(j)}[${d}]`).join(" + ")})${div}\n`
         + `${pad}= (${R.Q[L].map((qd, d) => `${pn(qd)}×${pn(k[d])}`).join(" + ")})${div}\n`
         + (opts.scale ? `${pad}= ${f(R.S[L][j], 4)}${div}\n` : "")
         + `${pad}= <b>${f(R.S2[L][j], 4)}</b>\n`;
     });
-    $("c3calc").innerHTML = t.trimEnd();
+    $("c3calc").innerHTML = txt.trimEnd();
   }
 
   // ④ softmax bars
-  $("c4bars").innerHTML = R.A.map((r, i) => `<div class="row"><div class="who" title="位置 ${i}">${posName(i)}</div><div class="bar">` +
-    r.map((w, j) => w > 0.0005 ? `<div class="seg" style="width:${w * 100}%;background:${tcol(j)}" title="w${ij(i, j)}：拿 ${j}·${names[j]} 的 v，${f(w, 3)}">${w > 0.12 ? f(w, 2) : ""}</div>` : "").join("") + `</div></div>`).join("");
-  $("c4legend").innerHTML = toks.map((_, j) => `<span><span class="dot" style="background:${tcol(j)}"></span>拿 ${j}·${names[j]} 的 v</span>`).join("");
+  $("c4bars").innerHTML = R.A.map((r, i) => `<div class="row"><div class="who" title="${t("posTitle", i)}">${posName(i)}</div><div class="bar">` +
+    r.map((w, j) => w > 0.0005 ? `<div class="seg" style="width:${w * 100}%;background:${tcol(j)}" title="w${ij(i, j)}${t("colon")}${t("barTitle", `${j}·${names[j]}`, f(w, 3))}">${w > 0.12 ? f(w, 2) : ""}</div>` : "").join("") + `</div></div>`).join("");
+  $("c4legend").innerHTML = toks.map((_, j) => `<span><span class="dot" style="background:${tcol(j)}"></span>${t("takeV", `${j}·${names[j]}`)}</span>`).join("");
   {
     const row = R.S2[L].filter((_, j) => !R.M[L][j]), mx = Math.max(...row), ex = row.map(x => Math.exp(x - mx)), S = sum(ex);
     const neg = x => x < 0 ? `(${f(x, 4)})` : f(x, 4);
     const Ss = row.map((_, j) => `S${ij(L, j)}`);
-    $("c4calc").innerHTML = `最後一列（${L}·${names[L]}）：max = max(${Ss.join(", ")}) = ${f(mx, 4)}\n\n`
+    $("c4calc").innerHTML = `${t("lastRow", `${L}·${names[L]}`)}max = max(${Ss.join(", ")}) = ${f(mx, 4)}\n\n`
       + row.map((x, j) => `e^(${Ss[j]} − max) = e^(${f(x, 4)} − ${neg(mx)}) = ${f(ex[j], 4)}`).join("\n")
-      + `\n\n總和 Σ = ${ex.map(e => f(e, 4)).join(" + ")} = ${f(S, 4)}\n\n`
-      + ex.map((e, j) => `w${ij(L, j)} = e^(${Ss[j]} − max) / Σ = ${f(e, 4)} / ${f(S, 4)} = <b>${f(R.A[L][j], 4)}</b>   <span class="dim">（拿 ${j}·${names[j]} 的 v）</span>`).join("\n");
+      + `\n\n${t("sumLbl")} = ${ex.map(e => f(e, 4)).join(" + ")} = ${f(S, 4)}\n\n`
+      + ex.map((e, j) => `w${ij(L, j)} = e^(${Ss[j]} − max) / Σ = ${f(e, 4)} / ${f(S, 4)} = <b>${f(R.A[L][j], 4)}</b>   <span class="dim">${t("takeVNote", `${j}·${names[j]}`)}</span>`).join("\n");
   }
 
   // ⑤ mix, W_O, residual
   $("c5calc").innerHTML = R.MIX.map((mx, i) => {
     const terms = R.A[i].map((w, j) => w > 0 ? `${f(w)} × ${vstr(R.V[j])}` : null).filter(Boolean);
     const pad = " ".repeat(String(i).length + names[i].length + 9);
-    return `<div class="calc">${posName(i)}：mix = ${terms.join("\n" + pad + "+ ")}\n${pad}= <b>${vstr(mx)}</b>`
-      + (i === L ? `\n\n${" ".repeat(4)}mix·W_O = ${vstr(R.O[i])}\n${" ".repeat(4)}h = x + mix·W_O = ${vstr(R.X[i])} + ${vstr(R.O[i])}\n${" ".repeat(4)}  = <b>${vstr(R.Hs[i])}</b>   <span class="dim">← 只有最後一個位置接著往下算</span>` : "")
+    return `<div class="calc">${posName(i)}${t("colon")}mix = ${terms.join("\n" + pad + "+ ")}\n${pad}= <b>${vstr(mx)}</b>`
+      + (i === L ? `\n\n${" ".repeat(4)}mix·W_O = ${vstr(R.O[i])}\n${" ".repeat(4)}h = x + mix·W_O = ${vstr(R.X[i])} + ${vstr(R.O[i])}\n${" ".repeat(4)}  = <b>${vstr(R.Hs[i])}</b>   <span class="dim">${t("onlyLast")}</span>` : "")
       + `</div>`;
   }).join("");
   draw(R);
 
   // ⑥ MLP
-  $("c6vals").innerHTML = `<div class="mats" style="margin-top:10px">${matHTML("h（最後一個字）", [R.h])}${matHTML("h·W₁", [R.pre])}${matHTML("u = ReLU", [R.u], { dimZero: true })}${matHTML("u·W₂", [R.down])}${matHTML("m = h + u·W₂", [R.m])}</div>`;
-  $("c6note").innerHTML = `把 4 個數字展開成 8 個，ReLU 把負的變成 0（這次有 <b>${R.u.filter(x => x === 0).length}</b> 個變成 0），再壓回 4 個，最後加回 h。ReLU 是整個模型唯一的非線性。`;
+  $("c6vals").innerHTML = `<div class="mats" style="margin-top:10px">${matHTML(t("matH"), [R.h])}${matHTML("h·W₁", [R.pre])}${matHTML("u = ReLU", [R.u], { dimZero: true })}${matHTML("u·W₂", [R.down])}${matHTML("m = h + u·W₂", [R.m])}</div>`;
+  $("c6note").innerHTML = t("c6note", R.u.filter(x => x === 0).length);
   $("c6calc").innerHTML = vmLines("pre", R.h, W.W1, R.pre) + `\n\nu = ReLU(pre) = ${vstr(R.u)}\n\n` + vmLines("down", R.u, W.W2, R.down)
     + `\n\nm = h + down = ${vstr(R.h)} + ${vstr(R.down)}\n  = <b>${vstr(R.m)}</b>`;
 
   // ⑦ logits
   const order = R.lg.map((_, t) => t).sort((a, b) => R.lg[b] - R.lg[a]);
-  $("c7table").innerHTML = `<tr><th>字</th><th>logit = m·E[t]</th><th>機率</th></tr>` + order.map(t =>
+  $("c7table").innerHTML = `<tr><th>${t("thWord")}</th><th>logit = m·E[t]</th><th>${t("thProb")}</th></tr>` + order.map(t =>
     `<tr class="${t === R.next ? "top" : ""}"><td class="w">${name(t)}</td><td>${f(R.lg[t], 3)}</td><td><div class="bc"><div class="pbar" style="width:${Math.max(1, R.p[t] * 120)}px"></div>${f(R.p[t] * 100, 2)}%</div></td></tr>`).join("");
   $("c7calc").innerHTML = R.lg.map((lg, t) => `logit(${name(t)}) = ${R.m.map((mi, i) => `${pn(mi)}×${pn(W.E[t][i])}`).join(" + ")}\n${" ".repeat(9 + W.VOCAB[t].length)}= <b>${f(lg, 4)}</b>`).join("\n");
 
@@ -664,8 +678,8 @@ function renderSampling(R){
   const rows = samplingDist(R.lg);
   sampRows = rows;
   const order = [...rows].sort((a, b) => b.p - a.p);
-  $("vocabTable").innerHTML = `<tr><th>字</th><th>logit</th><th>÷T 後 softmax</th><th>排名</th><th>篩選</th><th>最後機率</th></tr>` + order.map(r => {
-    const tag = r.status === "ok" ? `<span class="tag ok">保留</span>` : r.status === "k" ? `<span class="tag k">被 Top-K 砍</span>` : `<span class="tag p">被 Top-P 砍</span>`;
+  $("vocabTable").innerHTML = `<tr><th>${t("thWord")}</th><th>logit</th><th>${t("thSoftT")}</th><th>${t("thRank")}</th><th>${t("thFilter")}</th><th>${t("thFinal")}</th></tr>` + order.map(r => {
+    const tag = r.status === "ok" ? `<span class="tag ok">${t("tagKept")}</span>` : r.status === "k" ? `<span class="tag k">${t("tagK")}</span>` : `<span class="tag p">${t("tagP")}</span>`;
     return `<tr class="${r.status === "ok" ? "" : "cut"}"><td class="w">${name(r.t)}</td><td>${f(r.logit)}</td>
       <td><div class="bc"><div class="pbar gray" style="width:${Math.max(2, r.p * 90)}px"></div>${f(r.p, 3)}</div></td>
       <td>#${r.rank}</td><td class="st">${tag}</td>
@@ -679,10 +693,10 @@ function renderHist(){
   $("sAppend").disabled = lastPick === null || toks.length >= 16;
   if (!tot){ $("hist").innerHTML = ""; return; }
   const mx = Math.max(...Object.values(sampCounts));
-  $("hist").innerHTML = `<div class="note" style="margin:0 0 4px">累計抽了 ${tot} 次：</div>` +
+  $("hist").innerHTML = `<div class="note" style="margin:0 0 4px">${t("hist", tot)}</div>` +
     W.VOCAB.map((w, t) => { const c = sampCounts[t] || 0; return `<div class="hrow"><span>${esc(w)}</span><div><div class="hb" style="width:${c / mx * 100}%"></div></div><span>${c}</span></div>`; }).join("");
 }
-$("s1").onclick = () => { const t = drawOne(); sampCounts[t] = (sampCounts[t] || 0) + 1; lastPick = t; $("picked").innerHTML = `抽到：<b>${name(t)}</b>`; renderHist(); };
+$("s1").onclick = () => { const t = drawOne(); sampCounts[t] = (sampCounts[t] || 0) + 1; lastPick = t; $("picked").innerHTML = I18N[LANG].picked(name(t)); renderHist(); };
 $("s100").onclick = () => { for (let i = 0; i < 100; i++){ const t = drawOne(); sampCounts[t] = (sampCounts[t] || 0) + 1; } renderHist(); };
 $("sClear").onclick = () => { sampCounts = {}; lastPick = null; $("picked").textContent = ""; renderHist(); };
 $("sAppend").onclick = () => { if (lastPick !== null && toks.length < 16){ toks.push(lastPick); render(); } };
@@ -692,15 +706,14 @@ $("resetSamp").onclick = () => { $("temp").value = 1; $("topk").value = W.VOCAB.
 // ---------- agreement with Lean's #eval ----------
 let LEAN_LOGITS = null;   // first #eval line of the build's Lean check (build.json)
 function agreement(){
-  if (SRC !== ORIGINAL){ $("agree").innerHTML = `<span class="pill wait">已修改</span>權重和原本不同；按第 9 步的「用 Lean 檢查」讓 Lean 算一次`; return; }
-  if (!opts.scale){ $("agree").innerHTML = `<span class="pill wait">實驗中</span>關掉 √d 後，和 Lean 檔案（有 √d）算的不一樣`; return; }
-  if (!LEAN_LOGITS){ $("agree").innerHTML = `<span class="pill wait">比對中</span>等待建置時 Lean 算出的 logits`; return; }
+  const pill = ([label, text], kind) => `<span class="pill ${kind}">${label}</span>${text}`;
+  if (SRC !== ORIGINAL){ $("agree").innerHTML = pill(t("agEdited"), "wait"); return; }
+  if (!opts.scale){ $("agree").innerHTML = pill(t("agExp"), "wait"); return; }
+  if (!LEAN_LOGITS){ $("agree").innerHTML = pill(t("agWait"), "wait"); return; }
   const save = opts.mask; opts.mask = true;
   const js = forward([0, 1]).lg; opts.mask = save;
   const ok = js.length === LEAN_LOGITS.length && js.every((x, i) => x.toFixed(6) === LEAN_LOGITS[i].toFixed(6));
-  $("agree").innerHTML = ok
-    ? `<span class="pill">和 Lean 一致</span>JavaScript 算出「&lt;s&gt; the」的 logits，和 Lean 的 <code>#eval</code> 到小數 6 位都一樣`
-    : `<span class="pill bad">不一致</span>JavaScript 和 Lean 的 <code>#eval</code> 結果不同`;
+  $("agree").innerHTML = ok ? pill(t("agOk"), "") : pill(t("agBad"), "bad");
 }
 
 // ---------- ⑨ Lean source view ----------
@@ -754,21 +767,21 @@ document.addEventListener("click", e => { const c = e.target.closest(".leanchip"
 
 $("edit").onclick = () => {
   const ed = $("editor");
-  if (ed.hidden){ ed.value = SRC; ed.hidden = false; $("code").hidden = true; $("edit").textContent = "完成"; ed.focus(); }
-  else { setSource(ed.value); ed.hidden = true; $("code").hidden = false; $("edit").textContent = "直接改原始碼"; }
+  if (ed.hidden){ ed.value = SRC; ed.hidden = false; $("code").hidden = true; $("edit").textContent = t("editDone"); ed.focus(); }
+  else { setSource(ed.value); ed.hidden = true; $("code").hidden = false; $("edit").textContent = t("edit"); }
 };
 function setSource(text){
   if (text === SRC) return;
   SRC = text; errLines = new Set(); resetLeanStatus();
   try { W = parseWeights(SRC); }
-  catch (e) { $("what").textContent = "讀不到檔案裡的權重（" + e.message + "），上面的卡片先保留原本的權重。"; }
+  catch (e) { const msg = e.message; showStatus(() => { setStatus("wait", t("notRun")); $("what").textContent = t("weightsUnread", msg); }); }
   renderCode(); render();
 }
 const currentSource = () => $("editor").hidden ? SRC : $("editor").value;
 $("copy").onclick = () => {
   const text = currentSource();
-  const done = () => { $("copy").textContent = "已複製"; setTimeout(() => $("copy").textContent = "複製", 1600); };
-  const fallback = () => { const r = document.createRange(); r.selectNodeContents($("code")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); $("copy").textContent = "已選取，按 ⌘C"; };
+  const done = () => { $("copy").textContent = t("copied"); setTimeout(() => $("copy").textContent = t("copy"), 1600); };
+  const fallback = () => { const r = document.createRange(); r.selectNodeContents($("code")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); $("copy").textContent = t("copySelected"); };
   try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
 };
 
@@ -778,9 +791,13 @@ let variant = new URLSearchParams(location.search).get("variant") || (IS_IOS ? "
 let build = null, downloadTotal = 0, worker = null;
 const mb = n => (n / 1e6).toFixed(1) + " MB";
 function setStatus(kind, text){ const s = $("status"); s.className = "pill " + kind; s.textContent = text; }
+// the current status, kept as a function so it can be redrawn in the other language
+let statusView = null;
+function showStatus(fn){ statusView = fn; fn(); }
 function resetLeanStatus(){
   if (worker) return;
-  setStatus("wait", "還沒跑"); $("theorems").hidden = true; $("console").hidden = true; readyText();
+  $("theorems").hidden = true; $("console").hidden = true;
+  showStatus(() => { setStatus("wait", t("notRun")); readyText(); });
 }
 function log(text, isErr){
   const c = $("console"); c.hidden = false;
@@ -799,13 +816,13 @@ function showTheorems(src, ok){
 function readyText(){
   if (!window.crossOriginIsolated){
     $("checkBtn").disabled = true;
-    $("what").textContent = "這個瀏覽器沒有開啟 Lean 需要的多執行緒（cross-origin isolation 沒開；無痕視窗常會擋）。請重新整理，或改用 Lean 4 Web。";
+    $("what").textContent = t("noCoi");
     return;
   }
   if (build){
     downloadTotal = build.sizes["lib.pack.gz"] + build.sizes[variant === "slim" ? "rt/slim/lean.wasm.gz" : "rt/lean.wasm.gz"] + build.sizes[variant === "slim" ? "rt/slim/lean.js" : "rt/lean.js"];
-    $("what").textContent = `在這個分頁執行 lean TinyLLM.lean。第一次要下載 ${mb(downloadTotal)}，之後用瀏覽器快取。`;
-  }
+    $("what").textContent = t("ready", mb(downloadTotal));
+  } else $("what").innerHTML = t("whatInit");
 }
 $("checkBtn").onclick = () => {
   if (worker) return;
@@ -815,22 +832,21 @@ $("checkBtn").onclick = () => {
   $("console").textContent = ""; $("console").hidden = true; $("theorems").hidden = true;
   $("progress").hidden = false; $("bar").style.width = "0%";
   $("checkBtn").disabled = true; $("edit").disabled = true;
-  setStatus("wait", "執行中");
+  showStatus(() => setStatus("wait", t("running")));
   const out = [];
   worker = new Worker("lean-worker.js");
-  const phaseZh = { "Downloading Lean and its library": "下載 Lean 和函式庫", "Starting the Lean runtime": "啟動 Lean", "Importing the library": "載入函式庫", "Elaborating TinyLLM.lean": "Lean 正在檢查 TinyLLM.lean" };
   worker.onmessage = (e) => {
     const m = e.data;
     if (m.type === "debug"){ console.log("[lean-worker]", m.data); return; }
-    if (m.type === "phase") $("what").textContent = (phaseZh[m.text] || m.text) + "…";
+    if (m.type === "phase") $("what").textContent = t("phase", m.text) + "…";
     else if (m.type === "download"){
       const frac = downloadTotal ? Math.min(1, m.loaded / downloadTotal) : 0;
       $("bar").style.width = (frac * 45).toFixed(1) + "%";
-      $("what").textContent = `下載 Lean 和函式庫… ${mb(m.loaded)}${downloadTotal ? " / " + mb(downloadTotal) : ""}`;
+      $("what").textContent = t("downloading", mb(m.loaded), downloadTotal ? mb(downloadTotal) : "");
     }
     else if (m.type === "modules"){
       $("bar").style.width = (45 + 45 * m.loaded / m.total).toFixed(1) + "%";
-      $("what").textContent = `載入函式庫… ${m.loaded} / ${m.total} 個模組`;
+      $("what").textContent = t("importing", m.loaded, m.total);
     }
     else if (m.type === "stdout" || m.type === "stderr"){
       const loc = /TinyLLM\.lean:(\d+):\d+: (error|warning)/.exec(m.data);
@@ -843,7 +859,7 @@ $("checkBtn").onclick = () => {
       if (variant !== "slim" && out.some(l => /exports count of \d+ exceeds/.test(l))){
         variant = "slim"; readyText();
         $("checkBtn").disabled = false; $("edit").disabled = false;
-        log("這個瀏覽器載入不了完整版的 Lean（匯出函數超過 100,000 個的上限），改用精簡版重跑…");
+        log(t("slimRetry"));
         setTimeout(() => $("checkBtn").click(), 0);
         return;
       }
@@ -851,45 +867,48 @@ $("checkBtn").onclick = () => {
       setTimeout(() => { $("progress").hidden = true; }, 600);
       $("checkBtn").disabled = false; $("edit").disabled = false;
       const ok = !m.hasErrors;
-      setStatus(ok ? "" : "bad", ok ? "Lean 接受了這個檔案" : "Lean 不接受這個檔案");
-      $("what").textContent = ok ? `每個 #eval 都跑完、每個定理都檢查通過，花了 ${m.seconds.toFixed(1)} 秒。`
-        : `Lean 回報${errLines.size ? " " + errLines.size + " 行有錯" : "了問題"}（${m.seconds.toFixed(1)} 秒）。`;
+      const secs = m.seconds.toFixed(1), nErr = errLines.size;
+      showStatus(() => {
+        setStatus(ok ? "" : "bad", ok ? t("accepted") : t("rejected"));
+        $("what").textContent = ok ? t("okDone", secs) : t("errDone", nErr, secs);
+      });
       showTheorems(src, ok);
       if (errLines.size) renderCode();
-      if (!out.length) log("（沒有輸出）");
+      if (!out.length) log(t("noOutput"));
     }
   };
   worker.onerror = (e) => {
-    log("Worker 錯誤：" + (e.message || "未知"), true);
+    log(t("workerError", e.message), true);
     worker && worker.terminate(); worker = null;
     $("checkBtn").disabled = false; $("edit").disabled = false;
-    setStatus("bad", "失敗");
+    showStatus(() => setStatus("bad", t("failed")));
   };
   worker.postMessage({ type: "run", code: src, variant });
 };
 
+function buildText(){
+  if (!build) return;
+  $("closureNote").textContent = t("closureNote", build.closure.modules, build.closure.ofModules);
+  $("ci").textContent = t("ci", new Date(build.builtAt).toISOString().slice(0, 10), build.leanVersion);
+}
 fetch("build.json").then(r => r.ok ? r.json() : null).then(b => {
   if (!b) return;
   build = b;
-  $("closureNote").textContent = `${b.closure.modules} / ${b.closure.ofModules} 個模組`;
-  const when = new Date(b.builtAt).toISOString().slice(0, 10);
-  $("ci").textContent = `建置網站時（${when}）也用同一個 WebAssembly Lean（${b.leanVersion}）檢查過原本的檔案。`;
+  buildText();
   try { LEAN_LOGITS = JSON.parse(b.check.output.split("\n")[0]); } catch (e) { LEAN_LOGITS = null; }
   agreement();
-}).catch(() => {}).finally(readyText);
+}).catch(() => {}).finally(() => { if (statusView) statusView(); });
 
 // ---------- Lean snippet in each step ----------
 const SNIPS = {
-  1: { parts: [["embed", "all"]], why: "E.getD t：拿第 t 列。這就是查表。" },
-  2: { parts: [["attend", [/let x :=/, /\bW[QKV]\b/]], ["vecMat", "all"]],
-       why: "q 在 let q 這行算；k 和 v 寫在後兩行的 vecMat c WK、vecMat c WV。vecMat 把 v 的每個數字乘上矩陣的一列再加起來，就是算式裡的每一個乘法。" },
-  3: { parts: [["attend", [/let scores/]], ["dot", "all"], ["blockAt", "all"]],
-       why: "dot 把對應位置相乘再加總，除以 Float.sqrt 4。Causal mask 寫在 blockAt：xs.take (i + 1) 只把前 i+1 個字交給 attend，後面的字根本不在清單裡。" },
-  4: { parts: [["attend", [/let w := softmax/]], ["softmax", "all"]], why: "softmax 先找最大值 m，算 e^(x − m)，再除以總和 s。" },
-  5: { parts: [["attend", [/let mix/, /vecMat mix WO/]], ["addV", "all"]], why: "scale wj 把每個 v 乘上權重，foldl addV 加起來得到 mix；最後一行乘 W_O，再 addV 加回 x（殘差）。" },
-  6: { parts: [["block", [/W1|W2/]], ["relu", "all"]], why: "h·W₁ → relu → ·W₂，再 addV h 加回去（第二個殘差）。" },
-  7: { parts: [["logits", [/E\.map/]], ["argmax", "all"]], why: "E.map (dot m)：m 和每個字的嵌入做內積，就是 logits；argmax 選最大的那個。" },
-  8: { parts: [["generate", [/argmax/]]], why: "Lean 檔只做 greedy：generate 每一步都取 argmax。Temperature、Top-K、Top-P 抽樣只在網頁裡，沒有寫進 Lean。" },
+  1: [["embed", "all"]],
+  2: [["attend", [/let x :=/, /\bW[QKV]\b/]], ["vecMat", "all"]],
+  3: [["attend", [/let scores/]], ["dot", "all"], ["blockAt", "all"]],
+  4: [["attend", [/let w := softmax/]], ["softmax", "all"]],
+  5: [["attend", [/let mix/, /vecMat mix WO/]], ["addV", "all"]],
+  6: [["block", [/W1|W2/]], ["relu", "all"]],
+  7: [["logits", [/E\.map/]], ["argmax", "all"]],
+  8: [["generate", [/argmax/]]],
 };
 function defLines(nm){
   const start = LINES.findIndex(l => new RegExp("^def " + nm + "\\b").test(l));
@@ -900,10 +919,10 @@ function defLines(nm){
   return { s, start, e };
 }
 function renderSnips(){
-  for (const [n, cfg] of Object.entries(SNIPS)){
+  for (const [n, parts] of Object.entries(SNIPS)){
     const box = $("snip" + n); if (!box) continue;
     let body = "", first = true; const where = [];
-    for (const [nm, hl] of cfg.parts){
+    for (const [nm, hl] of parts){
       const r = defLines(nm); if (!r) continue;
       if (!first) body += `<div class="gap">⋯</div>`;
       first = false;
@@ -912,60 +931,28 @@ function renderSnips(){
         const on = hl === "all" ? k >= r.start : hl.some(re => re.test(LINES[k]));
         body += `<div class="ln${on ? " hl" : ""}"><i>${k + 1}</i><span>${hlLine(LINES[k], st) || " "}</span></div>`;
       }
-      where.push(`<b>${nm}</b> ${r.start + 1 === r.e + 1 ? "第 " + (r.start + 1) + " 行" : "第 " + (r.start + 1) + "–" + (r.e + 1) + " 行"}`);
+      where.push(`<b>${nm}</b> ${r.start === r.e ? t("line", r.start + 1) : t("lines", r.start + 1, r.e + 1)}`);
     }
-    box.innerHTML = `<div class="sh">TinyLLM.lean：${where.join("、")}（黃色是這一步）<button class="leanchip-full" data-def="${cfg.parts[0][0]}">在完整檔案看</button></div>`
-      + `<div class="sc">${body}</div><div class="why">${cfg.why}</div>`;
+    box.innerHTML = `<div class="sh">${t("snipHead", where.join(t("sep")))}<button class="leanchip-full" data-def="${parts[0][0]}">${t("seeFull")}</button></div>`
+      + `<div class="sc">${body}</div><div class="why">${t("why")[n]}</div>`;
   }
 }
 document.addEventListener("click", e => { const b = e.target.closest(".leanchip-full"); if (b) highlightDef(b.dataset.def); });
 
 // ---------- footnotes: number terms where they first appear, list them at the bottom ----------
-const GLOSS = {
-  lean: ["Lean 4", "一個程式語言，也是證明輔助工具：能執行程式（#eval），也能檢查數學證明是不是正確。"],
-  autoreg: ["自迴歸 Transformer", "一個字一個字往下預測的 Transformer：只預測下一個字，接回上下文，再預測下一個。GPT 也屬於這一類。"],
-  attn: ["attention（注意力）", "讓每個字依照「對得上」的程度，從其他字收集資訊。第 ②–⑤ 步就是 attention。"],
-  relu: ["ReLU", "max(0, x)：負數變 0，正數不變。這是整個模型唯一的非線性。"],
-  mlp: ["MLP", "多層感知器。這裡是「乘 W₁ → ReLU → 乘 W₂」，對每個位置各自加工，見第 ⑥ 步。"],
-  tied: ["共用嵌入表（tied weights）", "輸入查表和輸出算分數用同一張表 E，省下一半的權重。見第 ① 步和第 ⑦ 步。"],
-  greedy: ["greedy（貪婪選字）", "每次都選機率最高的字（argmax），不抽樣。第 ⑧ 步是抽樣的版本。"],
-  weights: ["權重", "模型裡由訓練決定的數字：E、W_Q、W_K、W_V、W_O、W₁、W₂，一共 160 個。"],
-  dim: ["維度 d", "每個字用幾個數字表示。這裡 d = 4，所以每個向量有 4 個數字。"],
-  head: ["head", "attention 的一組 W_Q、W_K、W_V。大型模型同時有很多組（multi-head），這裡只有 1 組。"],
-  posenc: ["位置編碼", "告訴模型「這是第幾個字」的額外向量。這裡沒有，所以兩個 the 的向量一模一樣，只能靠前文分辨。"],
-  argmax: ["argmax", "「最大的是第幾個」。例如 argmax [0.1, 0.7, 0.2] = 1。"],
-  softmax: ["softmax", "把一組分數變成加起來等於 1 的比例：e^(分數 − 最大值) ÷ 總和。分數越大，比例越大。見第 ④ 步。"],
-  sqrtd: ["√d", "分數除以維度的平方根（√4 = 2），讓分數不要太大，softmax 才不會太極端。"],
-  mask: ["Causal mask", "規定每個字只能看自己和前面的字：後面字的分數設成 −∞，softmax 之後權重就是 0。見第 ③ 步的紅色格子。"],
-  vec: ["向量", "一排數字，例如 [−0.6, −1.1, 0.3, 0.4]。"],
-  qkv: ["Q、K、V（query、key、value）", "q：我在找什麼；k：我能被找到的標籤；v：被找到時交出的內容。小寫是一個字的向量，大寫是全部字排成的矩陣。"],
-  matrix: ["矩陣", "排成列和欄的數字表。向量乘矩陣：結果的第 j 個數字 = 向量和矩陣第 j 欄做內積。"],
-  wqkv: ["W_Q、W_K、W_V", "三個 4×4 的權重矩陣，把字的向量 x 變成 q、k、v（例如 q = x·W_Q）。訓練學出來，每個字都用同一組。"],
-  transpose: ["Kᵀ（轉置）", "把矩陣的列和欄對調。這樣 Q·Kᵀ 一次就能算出所有的 qᵢ·kⱼ。"],
-  dot: ["內積", "兩個向量對應位置相乘，再全部加起來，結果是一個數字。例如 [1, 2]·[3, 4] = 1×3 + 2×4 = 11。"],
-  wo: ["W_O", "4×4 的權重矩陣，把 attention 混合出來的 mix 再轉一次，然後加回 x。"],
-  residual: ["殘差（residual）", "把輸入直接加回輸出（h = x + …），讓每一層只需要學「要修改多少」，原本的資訊不會被蓋掉。"],
-  w12: ["W₁、W₂", "MLP 的兩個權重矩陣：W₁ 是 4×8（展開成 8 個數字），W₂ 是 8×4（壓回 4 個）。"],
-  logits: ["logits", "每個字還沒變成機率的分數。這裡 logitₜ = m·E[t]，經過 softmax 之後才是機率。"],
-  bert: ["BERT / encoder", "另一類 Transformer：每個字能同時看前後所有字（沒有 causal mask），適合理解文字，不適合一個字一個字生成。"],
-  nopeek: ["no_peeking", "TinyLLM.lean 裡的定理：在後面加任何字，前面位置的結果都不會改變。這是 causal mask 的數學保證。"],
-  wasm: ["WebAssembly", "讓瀏覽器能執行編譯好的程式。這裡用它在你的分頁裡跑整個 Lean 編譯器。"],
-  eval: ["#eval", "Lean 的指令：把一個式子算出來、印出結果。只負責算，不證明任何事。"],
-  theorem: ["定理（theorem）", "要 Lean 確認一定成立的命題。只要有一個證明不成立，Lean 就不接受整個檔案。"],
-};
 let glossOrder = [], lastFn = null;
 function numberFootnotes(){
   const links = [...document.querySelectorAll("sup.fn a[data-g]")];
   const order = [];
   links.forEach(a => { if (!order.includes(a.dataset.g)) order.push(a.dataset.g); });
   links.forEach(a => {
-    const g = a.dataset.g, n = order.indexOf(g) + 1, [term, def] = GLOSS[g] || [g, ""];
-    a.textContent = n; a.title = `${term}：${def}`; a.setAttribute("aria-label", `註解 ${n}：${term}`);
+    const g = a.dataset.g, n = order.indexOf(g) + 1, [term, def] = t("gloss")[g] || [g, ""];
+    a.textContent = n; a.title = `${term}${t("colon")}${def}`; a.setAttribute("aria-label", t("fnAria", n, term));
   });
   if (order.join() === glossOrder.join()) return;
   glossOrder = order;
-  $("glossList").innerHTML = order.map(g => { const [term, def] = GLOSS[g] || [g, ""];
-    return `<li id="g-${g}"><b>${esc(term)}</b>　${esc(def)}<a href="#" class="back">↩ 回到原文</a></li>`; }).join("");
+  $("glossList").innerHTML = order.map(g => { const [term, def] = t("gloss")[g] || [g, ""];
+    return `<li id="g-${g}"><b>${esc(term)}</b>　${esc(def)}<a href="#" class="back">${t("glossBack")}</a></li>`; }).join("");
 }
 document.addEventListener("click", e => {
   const a = e.target.closest("sup.fn a");
@@ -1009,10 +996,32 @@ document.addEventListener("keydown", e => {
   if (e.key === "ArrowLeft") goStep(cur - 1);
 });
 
+// ---------- apply a language to the whole page ----------
+function applyLang(lang, persist){
+  LANG = lang;
+  document.documentElement.lang = t("htmlLang");
+  document.title = t("title");
+  document.querySelector('meta[name="description"]').setAttribute("content", t("metaDesc"));
+  document.querySelectorAll("[data-i18n]").forEach(el => { el.innerHTML = fmt(t(el.dataset.i18n)); });
+  document.querySelectorAll("[data-i18n-aria]").forEach(el => el.setAttribute("aria-label", t(el.dataset.i18nAria)));
+  document.querySelectorAll(".langbtn").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.lang === lang)));
+  $("edit").textContent = $("editor").hidden ? t("edit") : t("editDone");
+  if (persist){
+    try { localStorage.setItem("tinyllm-lang", lang); } catch (e) {}
+    const u = new URL(location.href);
+    if (u.searchParams.has("lang")){ u.searchParams.set("lang", lang === "zh" ? "zh-TW" : "en"); history.replaceState(null, "", u); }
+  }
+  glossOrder = [];          // rebuild the glossary in the new language
+  buildText();
+  if (statusView) statusView();
+  if (lastPick !== null) $("picked").innerHTML = I18N[LANG].picked(name(lastPick));
+  renderCode(); render(); goStep(cur, false);
+}
+document.querySelectorAll(".langbtn").forEach(b => b.addEventListener("click", () => { if (b.dataset.lang !== LANG) applyLang(b.dataset.lang, true); }));
+
 $("topk").max = $("topk").value = W.VOCAB.length;   // default Top-K keeps every word
-renderCode();
-render();
-goStep(0, false);
+statusView = () => { setStatus("wait", t("notRun")); readyText(); };
+applyLang(LANG, false);
 })();
 </script>
 </body>

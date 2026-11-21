@@ -7,8 +7,9 @@ The written content of this project is licensed under the Creative Commons
 Attribution 4.0 International License (CC BY 4.0):
 https://creativecommons.org/licenses/by/4.0/
 
-This covers README.md and the explanatory text in site/index.html (the step
-explanations, worked formulas, notes and the glossary). The code is licensed
+This covers README.md, README.zh-TW.md and the page's text in English and
+Chinese (site/i18n.js and site/index.html: the step explanations, worked
+formulas, notes and the glossary). The code is licensed
 under the MIT License (see LICENSE). Third-party components keep their own
 licenses (see THIRD_PARTY_LICENSES).
 
