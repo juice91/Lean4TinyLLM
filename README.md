@@ -82,3 +82,9 @@ Central-difference gradients, Adam, 3000 steps. Seed 2 produced the weights in `
 | `tools/train.js` | trains the weights |
 | `runtime.json` | the pinned Lean WebAssembly version and hashes |
 | `LICENSE`, `LICENSE-TEXT`, `THIRD_PARTY_LICENSES` | licenses |
+
+## Credits and related work
+
+- [Lean 4](https://lean-lang.org); [cauli/lean4-wasm-in-browser](https://github.com/cauli/lean4-wasm-in-browser) builds it to WebAssembly so it runs in the browser; [coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker) provides cross-origin isolation on GitHub Pages
+- Interactive explainers, without Lean: [Transformer Explainer](https://github.com/poloclub/transformer-explainer) (GPT-2 in the browser), [LLM Visualization](https://bbycroft.net/llm) (3-D walkthrough of nano-gpt)
+- Transformers verified in Lean, without an interactive page: [srush/lean-transformer](https://github.com/srush/lean-transformer), [teal-sea/lean-checked-network](https://github.com/teal-sea/lean-checked-network), [TorchLean](https://github.com/lean-dojo/TorchLean)

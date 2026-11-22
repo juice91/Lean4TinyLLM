@@ -82,3 +82,9 @@ node tools/train.js 2 > weights.json
 | `tools/train.js` | 訓練權重 |
 | `runtime.json` | 固定的 Lean WebAssembly 版本和雜湊值 |
 | `LICENSE`、`LICENSE-TEXT`、`THIRD_PARTY_LICENSES` | 授權 |
+
+## 致謝與相關專案
+
+- [Lean 4](https://lean-lang.org)；[cauli/lean4-wasm-in-browser](https://github.com/cauli/lean4-wasm-in-browser) 把它編譯成 WebAssembly，才能在瀏覽器裡跑；[coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker) 讓 GitHub Pages 有 cross-origin isolation
+- 互動教學（沒有 Lean）：[Transformer Explainer](https://github.com/poloclub/transformer-explainer)（在瀏覽器裡跑 GPT-2）、[LLM Visualization](https://bbycroft.net/llm)（3D 逐步看 nano-gpt）
+- 用 Lean 驗證 Transformer（沒有互動頁）：[srush/lean-transformer](https://github.com/srush/lean-transformer)、[teal-sea/lean-checked-network](https://github.com/teal-sea/lean-checked-network)、[TorchLean](https://github.com/lean-dojo/TorchLean)
