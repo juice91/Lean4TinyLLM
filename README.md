@@ -80,9 +80,3 @@ Central-difference gradients, Adam, 3000 steps. Seed 2 produced the weights in `
 | `tools/train.js` | trains the weights |
 | `runtime.json` | the pinned Lean WebAssembly version and hashes |
 | `LICENSE`, `LICENSE-TEXT`, `THIRD_PARTY_LICENSES` | licenses |
-
-## License
-
-- **Code**: [MIT](LICENSE), © 2026 juice91
-- **Text** (README, the page's explanations, worked formulas and glossary): [CC BY 4.0](LICENSE-TEXT). When you share or adapt it, credit “Lean4TinyLLM by juice91” and link to this repo
-- **Third-party components** keep their own licenses; see [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES). The WebAssembly build of Lean 4 and the two files adapted from cauli/lean4-wasm-in-browser are Apache-2.0; coi-serviceworker is MIT
