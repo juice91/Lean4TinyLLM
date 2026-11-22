@@ -2,6 +2,8 @@
 
 [English](README.md) · **繁體中文**
 
+**目的**：看懂語言模型怎麼選出下一個字。模型小到可以整個看完，也經過 Lean 4 檢查。
+
 > **▶ 線上試玩：[juice91.github.io/Lean4TinyLLM](https://juice91.github.io/Lean4TinyLLM/?lang=zh-TW)**
 >
 > 不用安裝，打開就能一步一步看計算，並在瀏覽器裡用 Lean 檢查（第一次載入約 31 MB）。

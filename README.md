@@ -2,6 +2,8 @@
 
 **English** · [繁體中文](README.zh-TW.md)
 
+**Purpose:** see exactly how a language model picks its next word, in a model small enough to read in full and checked by Lean 4.
+
 > **▶ Try it live: [juice91.github.io/Lean4TinyLLM](https://juice91.github.io/Lean4TinyLLM/)**
 >
 > Nothing to install: step through the computation in your browser and check it with Lean there too (about 31 MB on first load).
