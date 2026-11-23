@@ -71,9 +71,10 @@ en: {
   navAria: "Steps",
   glossT: "Glossary",
   glossNum: "≡",
+  ghLink: "Source on GitHub",
   glossAria: "Glossary",
   pickAria: "Word choice",
-  footer: "Lean's WebAssembly build comes from <a href=\"https://github.com/cauli/lean4-wasm-in-browser\" target=\"_blank\" rel=\"noopener\">cauli/lean4-wasm-in-browser</a> (Apache-2.0); cross-origin isolation comes from <a href=\"https://github.com/gzuidhof/coi-serviceworker\" target=\"_blank\" rel=\"noopener\">coi-serviceworker</a> (MIT).<br>TinyLLM's code is under the <a href=\"LICENSE.txt\">MIT</a> license and its text (explanations, worked formulas, glossary) under <a href=\"https://creativecommons.org/licenses/by/4.0/\" target=\"_blank\" rel=\"noopener\">CC BY 4.0</a> (<a href=\"LICENSE-TEXT.txt\">full text</a>), © 2026 juice91. Third-party licenses: <a href=\"THIRD_PARTY_LICENSES.txt\">THIRD_PARTY_LICENSES</a>.",
+  footer: "Source code, README and issues: <a href=\"https://github.com/juice91/Lean4TinyLLM\" target=\"_blank\" rel=\"noopener\">github.com/juice91/Lean4TinyLLM</a>.<br>Lean's WebAssembly build comes from <a href=\"https://github.com/cauli/lean4-wasm-in-browser\" target=\"_blank\" rel=\"noopener\">cauli/lean4-wasm-in-browser</a> (Apache-2.0); cross-origin isolation comes from <a href=\"https://github.com/gzuidhof/coi-serviceworker\" target=\"_blank\" rel=\"noopener\">coi-serviceworker</a> (MIT).<br>TinyLLM's code is under the <a href=\"LICENSE.txt\">MIT</a> license and its text (explanations, worked formulas, glossary) under <a href=\"https://creativecommons.org/licenses/by/4.0/\" target=\"_blank\" rel=\"noopener\">CC BY 4.0</a> (<a href=\"LICENSE-TEXT.txt\">full text</a>), © 2026 juice91. Third-party licenses: <a href=\"THIRD_PARTY_LICENSES.txt\">THIRD_PARTY_LICENSES</a>.",
 
   // ---------- generated text ----------
   sep: ", ",
@@ -269,9 +270,10 @@ zh: {
   navAria: "步驟",
   glossT: "名詞註解",
   glossNum: "註",
+  ghLink: "GitHub 原始碼",
   glossAria: "名詞註解",
   pickAria: "選字方式",
-  footer: "Lean 的 WebAssembly 版本來自 <a href=\"https://github.com/cauli/lean4-wasm-in-browser\" target=\"_blank\" rel=\"noopener\">cauli/lean4-wasm-in-browser</a>（Apache-2.0）；cross-origin isolation 來自 <a href=\"https://github.com/gzuidhof/coi-serviceworker\" target=\"_blank\" rel=\"noopener\">coi-serviceworker</a>（MIT）。<br>TinyLLM 的程式碼採 <a href=\"LICENSE.txt\">MIT</a> 授權，文字（解說、算式說明、名詞註解）採 <a href=\"https://creativecommons.org/licenses/by/4.0/deed.zh-hant\" target=\"_blank\" rel=\"noopener\">CC BY 4.0</a>（<a href=\"LICENSE-TEXT.txt\">全文</a>），© 2026 juice91；第三方元件的授權見 <a href=\"THIRD_PARTY_LICENSES.txt\">THIRD_PARTY_LICENSES</a>。",
+  footer: "原始碼、說明和回報問題：<a href=\"https://github.com/juice91/Lean4TinyLLM\" target=\"_blank\" rel=\"noopener\">github.com/juice91/Lean4TinyLLM</a>。<br>Lean 的 WebAssembly 版本來自 <a href=\"https://github.com/cauli/lean4-wasm-in-browser\" target=\"_blank\" rel=\"noopener\">cauli/lean4-wasm-in-browser</a>（Apache-2.0）；cross-origin isolation 來自 <a href=\"https://github.com/gzuidhof/coi-serviceworker\" target=\"_blank\" rel=\"noopener\">coi-serviceworker</a>（MIT）。<br>TinyLLM 的程式碼採 <a href=\"LICENSE.txt\">MIT</a> 授權，文字（解說、算式說明、名詞註解）採 <a href=\"https://creativecommons.org/licenses/by/4.0/deed.zh-hant\" target=\"_blank\" rel=\"noopener\">CC BY 4.0</a>（<a href=\"LICENSE-TEXT.txt\">全文</a>），© 2026 juice91；第三方元件的授權見 <a href=\"THIRD_PARTY_LICENSES.txt\">THIRD_PARTY_LICENSES</a>。",
 
   // ---------- 程式產生的文字 ----------
   sep: "、",
